@@ -113,7 +113,11 @@ def main() -> None:
 
     env = load_env(SCRIPT_DIR / ".env")
     args.backend = args.backend or env.get("BACKEND", "local")
-    args.out = Path(args.out or env.get("OUTPUT_DIR", SCRIPT_DIR / "output")).expanduser()
+    out = Path(args.out or env.get("OUTPUT_DIR") or (SCRIPT_DIR / "output")).expanduser()
+    if args.out is None and not out.is_absolute():
+        # A relative OUTPUT_DIR from .env is anchored to the project dir, not the CWD
+        out = SCRIPT_DIR / out
+    args.out = out
     args.out.mkdir(parents=True, exist_ok=True)
 
     pdfs = collect_pdfs(args.inputs)
