@@ -50,7 +50,8 @@ passa a rodar no desktop (i9-10900F + RTX 3050 8GB + 64GB RAM).** CLAUDE.md atua
 - Criado `server.py` (FastAPI/uvicorn — já vinham no venv de carona com o pdf2zh): serve o frontend, fila de jobs (1 por vez), upload/download, e um **proxy LLM interno** (`/llmproxy/v1`) — o traduzir.py é chamado com `--base-url` apontando pro proxy, que repassa ao LM Studio registrando tokens e duração de cada requisição. GPU via `nvidia-smi` (funciona no WSL), info do modelo via API nativa `/api/v0/models` do LM Studio
 - Criado `frontend/index.html` (single-file, sem dependências, feito por agente de design seguindo a skill dataviz): drag-and-drop de PDF, lista de jobs com log ao vivo, downloads, dashboard com contadores LLM + sparklines de tokens/s, GPU, VRAM e temperatura
 - Rodar: `.venv/bin/python server.py` → **http://localhost:8010** (o navegador do Windows alcança o localhost do WSL). Porta configurável via `FRONTEND_PORT` no `.env`
-- Teste e2e: upload via API ok, rejeição de não-PDF ok, job real disparado com métricas ao vivo (4 req ativas, GPU 93%, ~28 tok/s por requisição)
+- Teste e2e concluído: upload via API ok, rejeição de não-PDF ok, downloads ok. **O mesmo paper caiu de ~46 min para 14,8 min com QPS 4** (64 requisições, 62k tokens de prompt, 31k de resposta; GPU ~93%, 60°C, PC utilizável). O tok/s por requisição cai (~12) porque 4 dividem a GPU, mas o throughput agregado triplica
+- Decisão: manter o `.dual.pdf` — custa só montagem de PDF (zero tokens/GPU), e serve de auditoria da tradução contra o original
 
 ### Próximos passos
 1. Comparar `output/2511.15247.pt-BR.mono.pdf` com a versão do Linnk
