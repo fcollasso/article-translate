@@ -1,606 +1,534 @@
 <!DOCTYPE html>
-<html lang="pt-BR" data-theme="dark">
+<html lang="pt-BR">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tradutor de Artigos</title>
+<title>traduzai</title>
+<link rel="icon" type="image/svg+xml" href="/favicon/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32.png">
+<link rel="apple-touch-icon" href="/favicon/apple-touch-icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   /* ============================================================
-     Tokens (paleta dark validada — dataviz reference palette)
+     Design tokens — handoff traduzai (oklch, temas dark/light)
      ============================================================ */
-  :root {
-    color-scheme: dark;
+  body {
+    margin: 0;
+    --bg:            oklch(0.145 0.008 255);
+    --surface:       oklch(0.185 0.009 255);
+    --surface-2:     oklch(0.225 0.01 255);
+    --border:        oklch(0.27 0.012 255);
+    --border-strong: oklch(0.34 0.014 255);
+    --text:          oklch(0.94 0.005 255);
+    --text-2:        oklch(0.7 0.012 255);
+    --text-3:        oklch(0.52 0.014 255);
+    --accent:        oklch(0.72 0.15 250);
+    --accent-soft:   oklch(0.72 0.15 250 / 0.14);
+    --green:         oklch(0.72 0.15 160);
+    --green-soft:    oklch(0.72 0.15 160 / 0.14);
+    --amber:         oklch(0.78 0.13 80);
+    --amber-soft:    oklch(0.78 0.13 80 / 0.14);
+    --red:           oklch(0.66 0.17 25);
+    --red-soft:      oklch(0.66 0.17 25 / 0.14);
+    --purple:        oklch(0.72 0.15 290); /* só gráfico VRAM */
+    --shadow: 0 1px 2px oklch(0 0 0/.25), 0 8px 24px oklch(0 0 0/.25);
 
-    --page:           #0d0d0d;
-    --surface-1:      #1a1a19;
-    --surface-2:      #222221;
+    --sans: 'Instrument Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
-    --text-primary:   #ffffff;
-    --text-secondary: #c3c2b7;
-    --text-muted:     #898781;
-
-    --grid:           #2c2c2a;
-    --baseline:       #383835;
-    --border:         rgba(255, 255, 255, 0.10);
-
-    /* categorical (dark steps) — validado: pior ΔE adjacente 15,7 */
-    --c-toks:         #3987e5;   /* slot 1 blue    → tokens/s        */
-    --c-gpu:          #199e70;   /* slot 2 aqua    → utilização GPU  */
-    --c-vram:         #9085e9;   /* slot 5 violet  → VRAM            */
-    --c-temp:         #c98500;   /* slot 3 yellow  → temperatura     */
-
-    --accent:         #3987e5;
-
-    /* status (fixo, nunca reutilizado como série) */
-    --st-good:        #0ca30c;
-    --st-warning:     #fab219;
-    --st-serious:     #ec835a;
-    --st-critical:    #d03b3b;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 13.5px;
+    line-height: 1.5;
+    transition: background .3s, color .3s;
+    -webkit-font-smoothing: antialiased;
+  }
+  body[data-theme="light"] {
+    --bg:            oklch(0.975 0.003 255);
+    --surface:       oklch(1 0 0);
+    --surface-2:     oklch(0.955 0.004 255);
+    --border:        oklch(0.9 0.006 255);
+    --border-strong: oklch(0.82 0.01 255);
+    --text:          oklch(0.22 0.015 255);
+    --text-2:        oklch(0.45 0.015 255);
+    --text-3:        oklch(0.6 0.012 255);
+    --accent:        oklch(0.55 0.17 250);
+    --accent-soft:   oklch(0.55 0.17 250 / 0.1);
+    --green:         oklch(0.56 0.14 160);
+    --green-soft:    oklch(0.56 0.14 160 / 0.12);
+    --amber:         oklch(0.66 0.13 80);
+    --amber-soft:    oklch(0.66 0.13 80 / 0.14);
+    --red:           oklch(0.55 0.19 25);
+    --red-soft:      oklch(0.55 0.19 25 / 0.12);
+    --purple:        oklch(0.55 0.17 290);
+    --shadow: 0 1px 2px oklch(0 0 0/.06), 0 8px 24px oklch(0 0 0/.06);
   }
 
   * { box-sizing: border-box; }
-
   [hidden] { display: none !important; }
+  button { font-family: var(--sans); }
 
-  html, body { margin: 0; padding: 0; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+  @keyframes barslide { from { background-position: 0 0; } to { background-position: 32px 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    .conn-dot, .bar-fill { animation: none !important; }
+  }
 
-  body {
-    background: var(--page);
-    color: var(--text-primary);
-    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
-    -webkit-font-smoothing: antialiased;
-    min-height: 100vh;
+  /* ============================================================
+     Layout — coluna única 860px, gap 28px
+     ============================================================ */
+  .page { min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 0 24px; }
+  .container { width: 100%; max-width: 860px; display: flex; flex-direction: column; gap: 28px; padding: 28px 0 48px; }
+
+  section { display: flex; flex-direction: column; gap: 12px; }
+
+  .sec-label {
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-3);
   }
 
   /* ============================================================
      Header
      ============================================================ */
-  header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    max-width: 1360px;
-    margin: 0 auto;
-    padding: 20px 24px 8px;
-  }
-  header h1 { font-size: 18px; font-weight: 650; margin: 0; letter-spacing: -0.01em; }
-  header .subtitle { margin: 2px 0 0; font-size: 12.5px; color: var(--text-muted); }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .brand { display: flex; flex-direction: column; gap: 6px; }
+  .wordmark { display: flex; align-items: baseline; gap: 2px; font-size: 26px; font-weight: 700; letter-spacing: -0.03em; }
+  .wordmark .ai { color: var(--accent); }
+  .wordmark .dot { color: var(--green); font-size: 30px; line-height: 0; }
+  .brand-meta { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 12px; color: var(--text-3); }
+  .brand-meta .hl { color: var(--text-2); }
 
-  .conn-pill {
-    display: inline-flex;
+  .header-right { display: flex; align-items: center; gap: 10px; }
+  .pill {
+    display: flex;
     align-items: center;
     gap: 7px;
-    font-size: 12px;
-    color: var(--text-secondary);
+    padding: 7px 13px;
     border: 1px solid var(--border);
     border-radius: 999px;
-    padding: 4px 12px;
-    background: var(--surface-1);
+    background: var(--surface);
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--text-2);
     white-space: nowrap;
   }
-  .dot {
-    width: 8px; height: 8px; border-radius: 50%;
-    background: var(--text-muted);
+  .conn-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 2.4s ease-in-out infinite; flex: none; }
+  .pill.down .conn-dot { background: var(--red); box-shadow: none; animation: none; }
+
+  button.pill { cursor: pointer; transition: border-color .15s, color .15s; }
+  button.pill:hover { border-color: var(--border-strong); color: var(--text); }
+  .theme-icon {
+    width: 12px; height: 12px; border-radius: 50%;
+    border: 1.5px solid currentColor;
+    background: linear-gradient(90deg, currentColor 50%, transparent 50%);
     flex: none;
   }
-  .dot.ok   { background: var(--st-good); }
-  .dot.bad  { background: var(--st-critical); }
-  .dot.run  { background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
-  @keyframes pulse { 50% { opacity: 0.35; } }
-  @media (prefers-reduced-motion: reduce) { .dot.run { animation: none; } }
 
-  /* Banner offline */
-  #offline-banner {
-    max-width: 1360px;
-    margin: 8px auto 0;
-    padding: 0 24px;
-  }
-  #offline-banner > div {
+  /* banner discreto de backend indisponível */
+  .offline {
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 12.5px;
-    color: var(--text-secondary);
-    background: var(--surface-1);
+    padding: 10px 14px;
     border: 1px solid var(--border);
-    border-left: 3px solid var(--st-serious);
-    border-radius: 8px;
-    padding: 8px 12px;
-  }
-
-  /* ============================================================
-     Layout
-     ============================================================ */
-  main {
-    display: grid;
-    grid-template-columns: minmax(420px, 1fr) 620px;
-    gap: 24px;
-    max-width: 1360px;
-    margin: 0 auto;
-    padding: 16px 24px 48px;
-    align-items: start;
-  }
-  @media (max-width: 1180px) {
-    main { grid-template-columns: 1fr; }
-  }
-
-  h2 {
-    font-size: 13px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--text-muted);
-    margin: 0 0 12px;
-  }
-
-  section.stale > *:not(h2) { opacity: 0.55; transition: opacity 0.3s; }
-
-  .card {
-    background: var(--surface-1);
-    border: 1px solid var(--border);
+    border-left: 3px solid var(--red);
     border-radius: 10px;
-    padding: 14px 16px;
+    background: var(--surface);
+    font-size: 12.5px;
+    color: var(--text-2);
   }
+  .offline .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--red); flex: none; }
+
+  .stale > *:not(.sec-label):not(.metrics-toggle) { opacity: .55; transition: opacity .3s; }
 
   /* ============================================================
-     Upload
+     Dropzone
      ============================================================ */
   #dropzone {
-    border: 1.5px dashed var(--baseline);
-    border-radius: 10px;
-    padding: 26px 16px;
-    text-align: center;
-    color: var(--text-secondary);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 44px 24px;
+    border: 1.5px dashed var(--border-strong);
+    border-radius: 16px;
+    background: var(--surface);
     cursor: pointer;
-    background: var(--surface-1);
-    transition: border-color 0.15s, background 0.15s;
+    transition: border-color .2s, background .2s;
+    text-align: center;
     outline: none;
   }
-  #dropzone:hover, #dropzone:focus-visible { border-color: var(--text-muted); }
-  #dropzone.dragover {
-    border-color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 8%, var(--surface-1));
+  #dropzone:hover, #dropzone:focus-visible { border-color: var(--text-3); }
+  #dropzone.dragover { border-color: var(--accent); background: var(--accent-soft); }
+  .dz-icon {
+    width: 44px; height: 44px; border-radius: 12px;
+    background: var(--accent-soft);
+    display: flex; align-items: center; justify-content: center;
   }
-  #dropzone .dz-title { font-size: 14.5px; color: var(--text-primary); font-weight: 550; }
-  #dropzone .dz-hint  { font-size: 12.5px; color: var(--text-muted); margin-top: 4px; }
-  #dropzone svg { display: block; margin: 0 auto 8px; color: var(--text-muted); }
+  .dz-icon span { font-family: var(--mono); font-size: 15px; font-weight: 600; color: var(--accent); }
+  .dz-title { font-size: 16px; font-weight: 600; }
+  .dz-sub { font-size: 13.5px; color: var(--text-3); }
 
   #upload-msg {
-    margin-top: 10px;
-    font-size: 12.5px;
-    border-radius: 8px;
-    padding: 8px 12px;
-    border: 1px solid var(--border);
-    background: var(--surface-1);
     display: flex;
     align-items: center;
     gap: 8px;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    font-size: 12.5px;
+    color: var(--text-2);
   }
-  #upload-msg.err  { border-left: 3px solid var(--st-critical); color: var(--text-secondary); }
-  #upload-msg.info { border-left: 3px solid var(--accent);      color: var(--text-secondary); }
+  #upload-msg.err  { border-left: 3px solid var(--red); }
+  #upload-msg.info { border-left: 3px solid var(--accent); }
 
   /* ============================================================
-     Jobs
+     Cards de job
      ============================================================ */
-  #jobs-list { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 12px; }
+  #jobs-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+  #jobs-empty { margin: 0; font-size: 13.5px; color: var(--text-3); }
 
-  #jobs-empty {
-    margin: 20px 4px 0;
-    color: var(--text-muted);
-    font-size: 13px;
-    text-align: center;
-    padding: 18px 0;
+  .job {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 18px 20px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface);
+    box-shadow: var(--shadow);
   }
-
-  .job { padding: 12px 14px; }
-  .job-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .job-name {
-    font-weight: 570;
-    font-size: 14px;
-    overflow-wrap: anywhere;
-    flex: 1 1 auto;
-    min-width: 0;
-  }
-  .job-elapsed { font-size: 12.5px; color: var(--text-secondary); white-space: nowrap; }
-  .job-meta { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+  .job-row1 { display: flex; align-items: center; gap: 12px; }
+  .job-name { font-family: var(--mono); font-size: 14px; font-weight: 600; overflow-wrap: anywhere; min-width: 0; }
+  .job-time { margin-left: auto; font-size: 12.5px; color: var(--text-3); white-space: nowrap; flex: none; }
 
   .badge {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
     font-size: 11.5px;
     font-weight: 600;
-    border-radius: 999px;
-    padding: 2.5px 10px;
-    border: 1px solid var(--border);
-    color: var(--text-secondary);
     white-space: nowrap;
     flex: none;
   }
-  .badge .dot { width: 7px; height: 7px; }
+  .badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .badge.b-queued  { background: var(--surface-2);   color: var(--text-2); }
+  .badge.b-running { background: var(--accent-soft); color: var(--accent); }
+  .badge.b-done    { background: var(--green-soft);  color: var(--green); }
+  .badge.b-error   { background: var(--red-soft);    color: var(--red); }
 
+  /* progresso */
+  .job-progress { display: flex; flex-direction: column; gap: 8px; }
+  .stage-row { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--text-2); }
+  .stage-row .pct { font-family: var(--mono); }
+  .bar-track { height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+  .bar-fill {
+    height: 100%;
+    border-radius: 999px;
+    background: repeating-linear-gradient(90deg, var(--accent) 0 16px, oklch(from var(--accent) l c h / 0.75) 16px 32px);
+    background-size: 32px 100%;
+    animation: barslide .8s linear infinite;
+    transition: width .5s;
+  }
+  .bar-fill.indet { width: 100%; animation: barslide .8s linear infinite, pulse 2.4s ease-in-out infinite; }
+
+  /* erro */
   .job-error {
-    margin-top: 10px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: var(--red-soft);
     font-size: 12.5px;
-    color: var(--text-secondary);
-    background: color-mix(in srgb, var(--st-critical) 10%, var(--surface-1));
-    border: 1px solid color-mix(in srgb, var(--st-critical) 35%, var(--border));
-    border-radius: 8px;
-    padding: 8px 12px;
+    color: var(--text-2);
     overflow-wrap: anywhere;
   }
-  .job-error strong { color: var(--st-critical); font-weight: 650; }
+  .job-error strong { color: var(--red); font-weight: 600; }
 
-  details.log { margin-top: 10px; }
+  /* log discreto */
   details.log summary {
     cursor: pointer;
     font-size: 12px;
-    color: var(--text-muted);
+    color: var(--text-3);
     user-select: none;
     list-style: none;
     display: inline-flex;
     align-items: center;
     gap: 6px;
+    width: fit-content;
   }
   details.log summary::-webkit-details-marker { display: none; }
-  details.log summary::before { content: "▸"; font-size: 10px; transition: transform 0.12s; }
+  details.log summary::before { content: "▶"; font-size: 8px; transition: transform .2s; }
   details.log[open] summary::before { transform: rotate(90deg); }
-  details.log summary:hover { color: var(--text-secondary); }
+  details.log summary:hover { color: var(--text-2); }
   details.log pre {
     margin: 8px 0 0;
-    font: 11.5px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    color: var(--text-secondary);
-    background: var(--page);
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 1.6;
+    color: var(--text-3);
+    background: var(--surface-2);
     border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 10px 12px;
-    max-height: 190px;
+    border-radius: 10px;
+    padding: 10px 14px;
+    max-height: 180px;
     overflow: auto;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
 
-  .job-files { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-
-  .btn {
-    display: inline-flex;
-    align-items: center;
+  /* downloads */
+  .job-files { display: flex; flex-wrap: wrap; gap: 8px; }
+  .dl {
+    display: flex;
+    align-items: baseline;
     gap: 7px;
-    font-size: 12.5px;
-    font-weight: 550;
-    color: var(--text-primary);
+    padding: 8px 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface-2);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
     text-decoration: none;
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 6px 12px;
-    cursor: pointer;
-    transition: background 0.12s, border-color 0.12s;
+    transition: border-color .15s;
   }
-  .btn:hover { background: color-mix(in srgb, var(--text-primary) 8%, var(--surface-2)); }
-  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-  .btn .size { color: var(--text-muted); font-weight: 400; }
-  .btn svg { flex: none; color: var(--text-secondary); }
+  .dl:hover { border-color: var(--accent); }
+  .dl .arrow { color: var(--accent); font-family: var(--mono); }
+  .dl .size { font-weight: 400; color: var(--text-3); font-size: 12px; }
 
   /* ============================================================
-     Métricas — modelo + contadores
+     Métricas do modelo (colapsável)
      ============================================================ */
-  .model-card { margin-bottom: 12px; }
-  .model-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .model-id {
-    font: 550 13.5px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    overflow-wrap: anywhere;
-    flex: 1 1 auto;
-    min-width: 0;
-  }
-  .model-grid {
-    display: flex;
-    gap: 28px;
-    flex-wrap: wrap;
-    margin-top: 10px;
-  }
-  .model-grid .field .k { font-size: 11.5px; color: var(--text-muted); }
-  .model-grid .field .v { font-size: 13px; color: var(--text-secondary); font-weight: 550; margin-top: 1px; }
-
-  .empty-note { color: var(--text-muted); font-size: 12.5px; }
-  .empty-note .hint { display: block; font-size: 11.5px; margin-top: 2px; }
-
-  .tiles {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 12px;
-    margin-bottom: 12px;
-  }
-  @media (max-width: 560px) { .tiles { grid-template-columns: 1fr; } }
-
-  .tile .label { font-size: 12px; color: var(--text-muted); }
-  .tile .value {
-    font-size: 24px;
-    font-weight: 600;
-    letter-spacing: -0.01em;
-    margin-top: 2px;
-    line-height: 1.2;
-  }
-  .tile .sub { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
-  .tile .sub b { color: var(--text-secondary); font-weight: 600; }
-
-  /* ============================================================
-     Métricas — chart tiles (sparklines)
-     ============================================================ */
-  .charts {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 12px;
-  }
-  @media (max-width: 560px) { .charts { grid-template-columns: 1fr; } }
-
-  .chart-tile { padding: 12px 14px 10px; }
-  .chart-tile .head { display: flex; align-items: baseline; gap: 8px; }
-  .chart-tile .label { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text-muted); flex: 1; }
-  .chart-tile .key { width: 10px; height: 10px; border-radius: 3px; flex: none; }
-  .chart-tile .value { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; margin-top: 3px; line-height: 1.2; }
-  .chart-tile .value .unit { font-size: 12.5px; font-weight: 500; color: var(--text-muted); margin-left: 2px; }
-  .chart-tile .sub { font-size: 11.5px; color: var(--text-muted); margin-top: 1px; min-height: 17px; }
-  .chart-tile .sub b { color: var(--text-secondary); font-weight: 600; }
-
-  .spark {
-    position: relative;
-    margin-top: 8px;
-    height: 58px;
-  }
-  .spark svg { display: block; width: 100%; height: 100%; }
-  .spark .spark-empty {
-    position: absolute;
-    inset: 0;
+  .metrics-toggle {
     display: flex;
     align-items: center;
-    justify-content: center;
+    gap: 9px;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
     font-size: 11.5px;
-    color: var(--text-muted);
-  }
-  .spark .crosshair {
-    position: absolute;
-    top: 4px; bottom: 4px;
-    width: 1px;
-    background: var(--baseline);
-    pointer-events: none;
-    display: none;
-  }
-  .spark .hoverdot {
-    position: absolute;
-    width: 8px; height: 8px;
-    border-radius: 50%;
-    border: 2px solid var(--surface-1); /* anel na cor da superfície */
-    transform: translate(-6px, -6px);
-    pointer-events: none;
-    display: none;
-  }
-
-  #viz-tooltip {
-    position: fixed;
-    z-index: 50;
-    pointer-events: none;
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 5px 10px;
-    font-size: 12px;
-    color: var(--text-primary);
-    box-shadow: 0 4px 16px rgba(0,0,0,0.45);
-    display: none;
-    white-space: nowrap;
-  }
-  #viz-tooltip .t { color: var(--text-muted); font-variant-numeric: tabular-nums; margin-right: 6px; }
-
-  /* medidor (meter) — trilha em passo claro da própria rampa */
-  .meter {
-    height: 7px;
-    border-radius: 999px;
-    overflow: hidden;
-    margin-top: 8px;
-  }
-  .meter > i {
-    display: block;
-    height: 100%;
-    border-radius: 999px;
-    transition: width 0.4s ease;
-  }
-
-  .state-badge { font-size: 11px; }
-
-  .warn-flag {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    font-size: 11px;
     font-weight: 600;
-    color: var(--text-secondary);
-    margin-left: 8px;
-    vertical-align: middle;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-3);
+    width: fit-content;
+  }
+  .metrics-toggle:hover { color: var(--text-2); }
+  .metrics-toggle .chev { display: inline-block; transition: transform .2s; font-size: 10px; }
+  .metrics-toggle.open .chev { transform: rotate(90deg); }
+  .metrics-toggle .hint { font-family: var(--mono); font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--text-3); }
+
+  #metrics-body { display: flex; flex-direction: column; gap: 12px; }
+
+  .card {
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface);
+  }
+
+  /* card do modelo */
+  .model-card { display: flex; flex-direction: column; gap: 14px; padding: 18px 20px; box-shadow: var(--shadow); }
+  .model-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .model-name { font-family: var(--mono); font-size: 14.5px; font-weight: 600; overflow-wrap: anywhere; min-width: 0; }
+  .model-fields { display: flex; gap: 36px; }
+  .field { display: flex; flex-direction: column; gap: 3px; }
+  .field .k { font-size: 12px; color: var(--text-3); }
+  .field .v { font-family: var(--mono); font-size: 14px; font-weight: 600; }
+  .ctx-track { height: 5px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+  .ctx-fill { height: 100%; border-radius: 999px; background: var(--accent); transition: width .5s; }
+  .model-empty { font-size: 13.5px; color: var(--text-3); }
+
+  /* grid 3 stats */
+  .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .stat { display: flex; flex-direction: column; gap: 5px; padding: 16px 18px; }
+  .stat .label { font-size: 12.5px; color: var(--text-2); }
+  .stat .value { font-family: var(--mono); font-size: 26px; font-weight: 600; letter-spacing: -0.02em; }
+  .stat .sub { font-size: 12px; color: var(--text-3); }
+  .stat .sub b { color: var(--text-2); font-weight: 600; }
+
+  /* grid 2x2 gráficos */
+  .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .chart { display: flex; flex-direction: column; gap: 4px; padding: 16px 18px; }
+  .chart .head { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-2); }
+  .chart .chip { width: 8px; height: 8px; border-radius: 3px; flex: none; }
+  .chart .valrow { display: flex; align-items: baseline; gap: 5px; }
+  .chart .value { font-family: var(--mono); font-size: 24px; font-weight: 600; letter-spacing: -0.02em; }
+  .chart .unit { font-size: 12px; color: var(--text-3); }
+  .chart .sub { font-size: 12px; color: var(--text-3); min-height: 15px; }
+  .chart .spark { width: 100%; height: 44px; margin-top: 6px; position: relative; }
+  .chart .spark svg { display: block; width: 100%; height: 44px; }
+  .chart .spark .nodata {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; color: var(--text-3);
+  }
+
+  @media (max-width: 640px) {
+    .stats-grid { grid-template-columns: 1fr; }
+    .charts-grid { grid-template-columns: 1fr; }
+    .model-fields { flex-direction: column; gap: 12px; }
   }
 
   /* ============================================================
-     Tabela (vista acessível dos dados)
+     Footer
      ============================================================ */
-  details.table-view { margin-top: 14px; }
-  details.table-view summary {
-    cursor: pointer;
-    font-size: 12px;
-    color: var(--text-muted);
-    user-select: none;
-  }
-  details.table-view summary:hover { color: var(--text-secondary); }
-  .tbl-wrap { overflow-x: auto; margin-top: 8px; }
-  .tbl-wrap table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 12px;
-    font-variant-numeric: tabular-nums;
-  }
-  .tbl-wrap th, .tbl-wrap td {
-    text-align: right;
-    padding: 5px 10px;
-    border-bottom: 1px solid var(--grid);
-    color: var(--text-secondary);
-    white-space: nowrap;
-  }
-  .tbl-wrap th:first-child, .tbl-wrap td:first-child { text-align: left; }
-  .tbl-wrap th { color: var(--text-muted); font-weight: 600; }
-
-  footer {
-    max-width: 1360px;
-    margin: 0 auto;
-    padding: 0 24px 28px;
-    font-size: 11.5px;
-    color: var(--text-muted);
-  }
+  footer { margin-top: 12px; display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; color: var(--text-3); }
+  footer .quote { font-style: italic; }
 </style>
 </head>
-<body>
+<body data-theme="dark">
+<script>
+  // aplica o tema persistido antes do primeiro paint
+  try {
+    if (localStorage.getItem("traduzai.theme") === "light") document.body.dataset.theme = "light";
+  } catch (e) { /* localStorage indisponível */ }
+</script>
 
-<header>
-  <div>
-    <h1>Tradutor de Artigos</h1>
-    <p class="subtitle">EN → PT-BR · pdf2zh_next · LM Studio local</p>
-  </div>
-  <span class="conn-pill" id="conn-pill">
-    <span class="dot" id="conn-dot"></span>
-    <span id="conn-text">conectando…</span>
-  </span>
-</header>
+<div class="page">
+  <div class="container">
 
-<div id="offline-banner" hidden>
-  <div>
-    <span class="dot" style="background: var(--st-serious)"></span>
-    backend indisponível — tentando reconectar automaticamente…
-  </div>
-</div>
-
-<main>
-  <!-- ==================== Coluna: trabalhos ==================== -->
-  <section id="jobs-section" aria-labelledby="jobs-h">
-    <h2 id="jobs-h">Trabalhos</h2>
-
-    <div id="dropzone" role="button" tabindex="0"
-         aria-label="Enviar PDF para tradução. Arraste um arquivo ou pressione Enter para escolher.">
-      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-           stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M12 16V4m0 0l-4 4m4-4l4 4"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/>
-      </svg>
-      <div class="dz-title">Arraste um PDF aqui</div>
-      <div class="dz-hint">ou clique para escolher um arquivo — o artigo entra na fila de tradução</div>
-    </div>
-    <input type="file" id="file-input" accept=".pdf,application/pdf" multiple hidden>
-    <div id="upload-msg" hidden></div>
-
-    <ol id="jobs-list"></ol>
-    <p id="jobs-empty">Nenhum trabalho ainda. Arraste um PDF acima para começar.</p>
-  </section>
-
-  <!-- ==================== Coluna: métricas ==================== -->
-  <section id="metrics-section" aria-labelledby="metrics-h">
-    <h2 id="metrics-h">Métricas ao vivo</h2>
-
-    <!-- Modelo -->
-    <div class="card model-card" id="model-card">
-      <div class="model-head">
-        <span class="model-id" id="model-id">—</span>
-        <span class="badge state-badge" id="model-state" hidden>
-          <span class="dot" id="model-state-dot"></span><span id="model-state-text"></span>
-        </span>
+    <!-- ==================== Header ==================== -->
+    <header>
+      <div class="brand">
+        <div class="wordmark"><span>traduz</span><span class="ai">ai</span><span class="dot">.</span></div>
+        <div class="brand-meta">
+          <span class="hl">EN → PT-BR</span>
+        </div>
       </div>
-      <div class="model-grid" id="model-grid" hidden>
-        <div class="field"><div class="k">quantização</div><div class="v" id="model-quant">—</div></div>
-        <div class="field" style="flex:1; min-width: 180px">
-          <div class="k">contexto carregado / máximo</div>
-          <div class="v" id="model-ctx">—</div>
-          <div class="meter" id="ctx-meter" style="background: color-mix(in srgb, var(--accent) 16%, var(--surface-1))">
-            <i id="ctx-meter-fill" style="background: var(--accent); width: 0%"></i>
+      <div class="header-right">
+        <div class="pill" id="conn-pill">
+          <span class="conn-dot"></span>
+          <span id="conn-text">backend conectado</span>
+        </div>
+        <button class="pill" id="theme-toggle" type="button">
+          <span class="theme-icon"></span>
+          <span id="theme-label">claro</span>
+        </button>
+      </div>
+    </header>
+
+    <div class="offline" id="offline-banner" hidden>
+      <span class="dot"></span>
+      backend indisponível — tentando reconectar automaticamente…
+    </div>
+
+    <!-- ==================== Upload ==================== -->
+    <section id="upload-section">
+      <input type="file" id="file-input" accept=".pdf" multiple hidden>
+      <div id="dropzone" role="button" tabindex="0"
+           aria-label="Enviar PDF para tradução. Arraste um arquivo ou pressione Enter para escolher.">
+        <div class="dz-icon"><span>↑</span></div>
+        <div class="dz-title">Arraste um PDF aqui</div>
+        <div class="dz-sub">ou clique para escolher — o artigo entra na fila de tradução</div>
+      </div>
+      <div id="upload-msg" hidden></div>
+    </section>
+
+    <!-- ==================== Trabalhos ==================== -->
+    <section id="jobs-section">
+      <div class="sec-label">Trabalhos</div>
+      <ol id="jobs-list"></ol>
+      <p id="jobs-empty">Nenhum trabalho ainda — arraste um PDF acima para começar.</p>
+    </section>
+
+    <!-- ==================== Métricas do modelo ==================== -->
+    <section id="metrics-section">
+      <button class="metrics-toggle open" id="metrics-toggle" type="button" aria-expanded="true" aria-controls="metrics-body">
+        <span class="chev">▶</span>
+        Métricas do modelo
+        <span class="hint" id="metrics-hint"></span>
+      </button>
+
+      <div id="metrics-body">
+        <!-- card do modelo -->
+        <div class="card model-card">
+          <div class="model-head" id="model-head" hidden>
+            <span class="model-name" id="model-name">—</span>
+            <span class="badge b-done" id="model-badge">carregado</span>
+          </div>
+          <div class="model-fields" id="model-fields" hidden>
+            <div class="field">
+              <span class="k">quantização</span>
+              <span class="v" id="model-quant">—</span>
+            </div>
+            <div class="field" style="flex:1">
+              <span class="k">contexto carregado / máximo</span>
+              <span class="v" id="model-ctx">—</span>
+            </div>
+          </div>
+          <div class="ctx-track" id="ctx-track" hidden><div class="ctx-fill" id="ctx-fill" style="width:0%"></div></div>
+          <div class="model-empty" id="model-empty">LM Studio inacessível — verifique se o servidor local está ativo e com um modelo carregado.</div>
+        </div>
+
+        <!-- grid 3 stats -->
+        <div class="stats-grid">
+          <div class="card stat">
+            <span class="label">Requisições</span>
+            <span class="value" id="st-req">—</span>
+            <span class="sub"><b id="st-active">—</b> ativas agora</span>
+          </div>
+          <div class="card stat">
+            <span class="label">Tokens de prompt</span>
+            <span class="value" id="st-ptok" title="">—</span>
+            <span class="sub">acumulados na sessão</span>
+          </div>
+          <div class="card stat">
+            <span class="label">Tokens de resposta</span>
+            <span class="value" id="st-ctok" title="">—</span>
+            <span class="sub">acumulados na sessão</span>
+          </div>
+        </div>
+
+        <!-- grid 2x2 gráficos -->
+        <div class="charts-grid">
+          <div class="card chart">
+            <div class="head"><span class="chip" style="background:var(--accent)"></span>Velocidade de geração</div>
+            <div class="valrow"><span class="value" id="c-speed">—</span><span class="unit">tok/s</span></div>
+            <div class="sub" id="c-speed-sub">média da sessão: —</div>
+            <div class="spark" id="spark-speed"><div class="nodata">sem dados ainda</div></div>
+          </div>
+          <div class="card chart">
+            <div class="head"><span class="chip" style="background:var(--green)"></span>Utilização da GPU</div>
+            <div class="valrow"><span class="value" id="c-gpu">—</span><span class="unit">%</span></div>
+            <div class="sub" id="c-gpu-sub">RTX 3050</div>
+            <div class="spark" id="spark-gpu"><div class="nodata">sem dados ainda</div></div>
+          </div>
+          <div class="card chart">
+            <div class="head"><span class="chip" style="background:var(--purple)"></span>VRAM</div>
+            <div class="valrow"><span class="value" id="c-vram">—</span><span class="unit">MiB</span></div>
+            <div class="sub" id="c-vram-sub">de — MiB</div>
+            <div class="spark" id="spark-vram"><div class="nodata">sem dados ainda</div></div>
+          </div>
+          <div class="card chart">
+            <div class="head"><span class="chip" style="background:var(--amber)"></span>Temperatura</div>
+            <div class="valrow"><span class="value" id="c-temp">—</span><span class="unit">°C</span></div>
+            <div class="sub">limite: 83 °C</div>
+            <div class="spark" id="spark-temp"><div class="nodata">sem dados ainda</div></div>
           </div>
         </div>
       </div>
-      <div class="empty-note" id="model-empty" hidden>
-        LM Studio inacessível
-        <span class="hint">verifique se o servidor local está ativo e com um modelo carregado</span>
-      </div>
-    </div>
+    </section>
 
-    <!-- Contadores LLM -->
-    <div class="tiles">
-      <div class="card tile">
-        <div class="label">Requisições</div>
-        <div class="value" id="llm-req">—</div>
-        <div class="sub"><b id="llm-active">—</b> ativas agora</div>
-      </div>
-      <div class="card tile">
-        <div class="label">Tokens de prompt</div>
-        <div class="value" id="llm-ptok" title="">—</div>
-        <div class="sub">acumulados na sessão</div>
-      </div>
-      <div class="card tile">
-        <div class="label">Tokens de resposta</div>
-        <div class="value" id="llm-ctok" title="">—</div>
-        <div class="sub">acumulados na sessão</div>
-      </div>
-    </div>
-
-    <!-- Gráficos de histórico -->
-    <div class="charts">
-      <div class="card chart-tile">
-        <div class="head"><span class="label"><span class="key" style="background: var(--c-toks)"></span>Velocidade de geração</span></div>
-        <div class="value" id="v-toks">—<span class="unit">tok/s</span></div>
-        <div class="sub">média da sessão: <b id="v-toks-avg">—</b></div>
-        <div class="spark" id="spark-toks"></div>
-      </div>
-
-      <div class="card chart-tile">
-        <div class="head"><span class="label"><span class="key" style="background: var(--c-gpu)"></span>Utilização da GPU</span></div>
-        <div class="value" id="v-gpu">—<span class="unit">%</span></div>
-        <div class="sub" id="v-gpu-sub">RTX 3050</div>
-        <div class="spark" id="spark-gpu"></div>
-      </div>
-
-      <div class="card chart-tile">
-        <div class="head"><span class="label"><span class="key" style="background: var(--c-vram)"></span>VRAM</span></div>
-        <div class="value" id="v-vram">—<span class="unit">MiB</span></div>
-        <div class="sub">de <b id="v-vram-total">—</b> MiB<span class="warn-flag" id="vram-flag" hidden><span class="dot"></span><span></span></span></div>
-        <div class="meter" id="vram-meter" hidden><i id="vram-meter-fill"></i></div>
-        <div class="spark" id="spark-vram"></div>
-      </div>
-
-      <div class="card chart-tile">
-        <div class="head"><span class="label"><span class="key" style="background: var(--c-temp)"></span>Temperatura</span></div>
-        <div class="value" id="v-temp">—<span class="unit">°C</span></div>
-        <div class="sub" id="v-temp-sub">&nbsp;<span class="warn-flag" id="temp-flag" hidden><span class="dot"></span><span></span></span></div>
-        <div class="spark" id="spark-temp"></div>
-      </div>
-    </div>
-
-    <!-- Vista em tabela (equivalente acessível dos gráficos) -->
-    <details class="table-view" id="table-view">
-      <summary>Dados recentes (tabela)</summary>
-      <div class="tbl-wrap">
-        <table>
-          <thead>
-            <tr><th>Hora</th><th>tok/s</th><th>GPU %</th><th>VRAM (MiB)</th><th>Temp (°C)</th></tr>
-          </thead>
-          <tbody id="table-body"><tr><td colspan="5">sem dados ainda</td></tr></tbody>
-        </table>
-      </div>
-    </details>
-  </section>
-</main>
-
-<footer>“O que eu não consigo criar, eu não entendo.” — Richard Feynman</footer>
-
-<div id="viz-tooltip" role="status"></div>
+    <footer>
+      <span class="quote">“O que eu não consigo criar, eu não entendo.” — Richard Feynman</span>
+    </footer>
+  </div>
+</div>
 
 <script type="module">
 "use strict";
 
 /* ==============================================================
-   Utilitários de formatação (pt-BR)
+   Formatação pt-BR
    ============================================================== */
 const nf0 = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
 const nf1 = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -609,7 +537,7 @@ const nfCompact = new Intl.NumberFormat("pt-BR", { notation: "compact", maximumF
 const isNum = (v) => typeof v === "number" && Number.isFinite(v);
 
 function fmtBytes(bytes) {
-  if (!isNum(bytes)) return "—";
+  if (!isNum(bytes)) return "";
   if (bytes >= 1024 ** 3) return nf1.format(bytes / 1024 ** 3) + " GB";
   if (bytes >= 1024 ** 2) return nf1.format(bytes / 1024 ** 2) + " MB";
   if (bytes >= 1024)      return nf1.format(bytes / 1024) + " KB";
@@ -626,11 +554,9 @@ function fmtDur(seconds) {
   return h > 0 ? `${h}:${pad(m)}:${pad(ss)}` : `${pad(m)}:${pad(ss)}`;
 }
 
-function fmtClock(epoch) {
+function fmtHM(epoch) {
   if (!isNum(epoch)) return "—";
-  return new Date(epoch * 1000).toLocaleTimeString("pt-BR", {
-    hour: "2-digit", minute: "2-digit", second: "2-digit",
-  });
+  return new Date(epoch * 1000).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
 
 const $ = (id) => document.getElementById(id);
@@ -641,13 +567,27 @@ const el = (tag, cls) => {
 };
 
 /* ==============================================================
-   Estado da aplicação
+   Tema (persistido em localStorage, default dark)
+   ============================================================== */
+function applyTheme(theme) {
+  document.body.dataset.theme = theme;
+  $("theme-label").textContent = theme === "light" ? "escuro" : "claro";
+  try { localStorage.setItem("traduzai.theme", theme); } catch (e) { /* ok */ }
+}
+$("theme-toggle").addEventListener("click", () => {
+  applyTheme(document.body.dataset.theme === "light" ? "dark" : "light");
+});
+$("theme-label").textContent = document.body.dataset.theme === "light" ? "escuro" : "claro";
+
+/* ==============================================================
+   Estado
    ============================================================== */
 const state = {
   backendDown: null, // null = ainda sem contato; força o primeiro update do pill
   jobs: [],
   metricsTimer: null,
   jobsTimer: null,
+  hint: { tokS: null, gpu: null },
 };
 
 /* ==============================================================
@@ -657,11 +597,10 @@ function setBackendDown(down) {
   if (state.backendDown === down) return;
   state.backendDown = down;
   $("offline-banner").hidden = !down;
+  $("conn-pill").classList.toggle("down", down);
+  $("conn-text").textContent = down ? "backend indisponível" : "backend conectado";
   $("jobs-section").classList.toggle("stale", down);
   $("metrics-section").classList.toggle("stale", down);
-  const dot = $("conn-dot");
-  dot.className = "dot " + (down ? "bad" : "ok");
-  $("conn-text").textContent = down ? "backend indisponível" : "backend conectado";
 }
 
 async function fetchJSON(url, opts) {
@@ -678,7 +617,7 @@ async function fetchJSON(url, opts) {
 }
 
 /* ==============================================================
-   Polling (pausa quando a aba está oculta)
+   Polling — métricas 2s; jobs 2s/10s adaptativo; pausa se oculto
    ============================================================== */
 function hasActiveJobs() {
   return state.jobs.some((j) => j.status === "queued" || j.status === "running");
@@ -748,6 +687,7 @@ async function uploadFile(file) {
   try {
     const res = await fetchJSON("/api/jobs", { method: "POST", body: fd });
     showUploadMsg(`"${res.filename}" entrou na fila.`, "info");
+    setMetricsOpen(true); // handoff: abre métricas ao iniciar um job
     pollJobs(); // atualiza a lista imediatamente
   } catch (e) {
     const msg = e.httpStatus === undefined
@@ -771,106 +711,116 @@ fileInput.addEventListener("change", () => {
   fileInput.value = "";
 });
 ["dragenter", "dragover"].forEach((ev) =>
-  dropzone.addEventListener(ev, (e) => {
-    e.preventDefault();
-    dropzone.classList.add("dragover");
-  })
+  dropzone.addEventListener(ev, (e) => { e.preventDefault(); dropzone.classList.add("dragover"); })
 );
 ["dragleave", "drop"].forEach((ev) =>
-  dropzone.addEventListener(ev, (e) => {
-    e.preventDefault();
-    dropzone.classList.remove("dragover");
-  })
+  dropzone.addEventListener(ev, (e) => { e.preventDefault(); dropzone.classList.remove("dragover"); })
 );
 dropzone.addEventListener("drop", (e) => {
   if (e.dataTransfer && e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
 });
 
 /* ==============================================================
-   Jobs — render com nós persistentes (preserva <details> aberto)
+   Jobs — DOM persistente por id (Map): não reseta details/scroll
    ============================================================== */
 const jobsList = $("jobs-list");
 const jobEls = new Map(); // id -> { root, refs, filesSig, lastLog }
 
 const STATUS_META = {
-  queued:  { label: "na fila",    dotClass: "",    color: "var(--text-muted)" },
-  running: { label: "traduzindo", dotClass: "run", color: "var(--accent)" },
-  done:    { label: "concluído",  dotClass: "ok",  color: "var(--st-good)" },
-  error:   { label: "erro",       dotClass: "bad", color: "var(--st-critical)" },
+  queued:  { label: "na fila",    cls: "b-queued" },
+  running: { label: "traduzindo", cls: "b-running" },
+  done:    { label: "concluído",  cls: "b-done" },
+  error:   { label: "falhou",     cls: "b-error" },
 };
 
-const ICON_DOWNLOAD =
-  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
-  'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-  '<path d="M12 4v12m0 0l-4-4m4 4l4-4"/><path d="M4 20h16"/></svg>';
+function stageLabel(progress) {
+  if (!isNum(progress)) return "preparando…";
+  if (progress < 20) return "extraindo texto do PDF";
+  if (progress < 90) return "traduzindo parágrafos";
+  return "gerando PDFs finais";
+}
 
-function buildJobEl(job) {
-  const root = el("li", "card job");
+function timeInfo(job, now) {
+  const sent = "enviado às " + fmtHM(job.created_at);
+  switch (job.status) {
+    case "queued":  return sent + " · na fila há " + fmtDur(now - job.created_at);
+    case "running": return sent + " · " + fmtDur(now - (job.started_at ?? job.created_at));
+    case "done":
+      return isNum(job.finished_at) ? sent + " · concluído às " + fmtHM(job.finished_at) : sent;
+    case "error":
+      return isNum(job.finished_at)
+        ? sent + " · falhou após " + fmtDur(job.finished_at - (job.started_at ?? job.created_at))
+        : sent;
+    default: return sent;
+  }
+}
 
-  const head = el("div", "job-head");
+function buildJobEl() {
+  const root = el("li", "job");
+
+  const row1 = el("div", "job-row1");
   const badge = el("span", "badge");
-  const badgeDot = el("span", "dot");
-  const badgeText = el("span");
-  badge.append(badgeDot, badgeText);
   const name = el("span", "job-name");
-  const elapsed = el("span", "job-elapsed");
-  head.append(badge, name, elapsed);
+  const time = el("span", "job-time");
+  row1.append(badge, name, time);
 
-  const meta = el("div", "job-meta");
+  const progress = el("div", "job-progress");
+  const stageRow = el("div", "stage-row");
+  const stage = el("span");
+  const pct = el("span", "pct");
+  stageRow.append(stage, pct);
+  const track = el("div", "bar-track");
+  const fill = el("div", "bar-fill");
+  track.append(fill);
+  progress.append(stageRow, track);
+  progress.hidden = true;
 
   const errorBox = el("div", "job-error");
   errorBox.hidden = true;
 
-  const log = el("details", "log");
-  const logSummary = el("summary");
-  logSummary.textContent = "Log";
-  const logPre = el("pre");
-  log.append(logSummary, logPre);
-  log.hidden = true;
-  logSummary.addEventListener("click", () => { root.dataset.userToggled = "1"; });
-
   const files = el("div", "job-files");
   files.hidden = true;
 
-  root.append(head, meta, errorBox, log, files);
-  return { root, refs: { badge, badgeDot, badgeText, name, elapsed, meta, errorBox, log, logPre, files }, filesSig: "", lastLog: null };
-}
+  const log = el("details", "log");
+  const logSummary = el("summary");
+  logSummary.textContent = "ver log";
+  const logPre = el("pre");
+  log.append(logSummary, logPre);
+  log.hidden = true;
 
-function elapsedText(job, now) {
-  switch (job.status) {
-    case "queued":  return "na fila há " + fmtDur(now - job.created_at);
-    case "running": return fmtDur(now - (job.started_at ?? job.created_at));
-    case "done":
-      return isNum(job.started_at) && isNum(job.finished_at)
-        ? "em " + fmtDur(job.finished_at - job.started_at) : "";
-    case "error":
-      return isNum(job.finished_at)
-        ? "após " + fmtDur(job.finished_at - (job.started_at ?? job.created_at)) : "";
-    default: return "";
-  }
+  root.append(row1, progress, errorBox, files, log);
+  return { root, refs: { badge, name, time, progress, stage, pct, fill, errorBox, log, logPre, files }, filesSig: "", lastLog: null };
 }
 
 function updateJobEl(entry, job) {
-  const { refs, root } = entry;
+  const { refs } = entry;
   const now = Date.now() / 1000;
   const meta = STATUS_META[job.status] || STATUS_META.queued;
 
-  refs.badgeText.textContent = meta.label;
-  refs.badgeDot.className = "dot " + meta.dotClass;
-  refs.badge.style.borderColor = `color-mix(in srgb, ${meta.color} 45%, var(--border))`;
-
+  refs.badge.textContent = meta.label;
+  refs.badge.className = "badge " + meta.cls;
   refs.name.textContent = job.filename;
   refs.name.title = job.filename;
+  refs.time.textContent = timeInfo(job, now);
 
-  root.dataset.status = job.status;
-  root.dataset.createdAt = job.created_at ?? "";
-  root.dataset.startedAt = job.started_at ?? "";
-  root.dataset.finishedAt = job.finished_at ?? "";
-  refs.elapsed.textContent = elapsedText(job, now);
-
-  let metaText = "enviado às " + fmtClock(job.created_at);
-  if (job.status === "done" && isNum(job.finished_at)) metaText += " · concluído às " + fmtClock(job.finished_at);
-  refs.meta.textContent = metaText;
+  // progresso (só job ativo)
+  if (job.status === "running") {
+    refs.progress.hidden = false;
+    const p = isNum(job.progress) ? Math.max(0, Math.min(100, job.progress)) : null;
+    refs.stage.textContent = stageLabel(p);
+    if (p === null) {
+      // estado indeterminado: começo do job, sem progresso ainda
+      refs.pct.textContent = "";
+      refs.fill.classList.add("indet");
+      refs.fill.style.width = "100%";
+    } else {
+      refs.pct.textContent = nf0.format(Math.round(p)) + "%";
+      refs.fill.classList.remove("indet");
+      refs.fill.style.width = p.toFixed(1) + "%";
+    }
+  } else {
+    refs.progress.hidden = true;
+  }
 
   // erro
   if (job.status === "error" && job.error) {
@@ -883,37 +833,34 @@ function updateJobEl(entry, job) {
     refs.errorBox.hidden = true;
   }
 
-  // log
+  // log discreto (running / error)
   const logText = (job.log_tail || "").trimEnd();
-  refs.log.hidden = !logText;
-  if (logText && entry.lastLog !== logText) {
+  const showLog = !!logText && (job.status === "running" || job.status === "error");
+  refs.log.hidden = !showLog;
+  if (showLog && entry.lastLog !== logText) {
     const pre = refs.logPre;
     const nearBottom = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 24;
     pre.textContent = logText;
     if (nearBottom) pre.scrollTop = pre.scrollHeight;
     entry.lastLog = logText;
   }
-  // visível durante a execução; recolhe ao terminar (a menos que o usuário tenha mexido)
-  if (!root.dataset.userToggled && logText) {
-    refs.log.open = job.status === "running";
-  }
 
-  // arquivos gerados
+  // downloads (job concluído)
   const filesArr = Array.isArray(job.files) ? job.files : [];
   const sig = filesArr.map((f) => f.url).join("|");
   if (job.status === "done" && filesArr.length) {
     if (entry.filesSig !== sig) {
       refs.files.innerHTML = "";
       for (const f of filesArr) {
-        const a = el("a", "btn");
+        const a = el("a", "dl");
         a.href = f.url;
         a.setAttribute("download", f.name || "");
-        a.innerHTML = ICON_DOWNLOAD;
-        const label = el("span");
-        label.textContent = f.label || f.name;
+        const arrow = el("span", "arrow");
+        arrow.textContent = "↓";
+        const label = document.createTextNode(f.label || f.name || "arquivo");
         const size = el("span", "size");
-        size.textContent = isNum(f.size) ? "(" + fmtBytes(f.size) + ")" : "";
-        a.append(label, size);
+        size.textContent = fmtBytes(f.size);
+        a.append(arrow, label, size);
         refs.files.append(a);
       }
       entry.filesSig = sig;
@@ -933,7 +880,7 @@ function renderJobs(jobs) {
     seen.add(job.id);
     let entry = jobEls.get(job.id);
     if (!entry) {
-      entry = buildJobEl(job);
+      entry = buildJobEl();
       jobEls.set(job.id, entry);
       orderChanged = true;
     }
@@ -950,75 +897,72 @@ function renderJobs(jobs) {
   $("jobs-empty").hidden = jobs.length > 0;
 }
 
-// tique de 1s para os tempos decorridos (só jobs ativos)
+// ticker de 1s para tempos decorridos dos jobs ativos
 setInterval(() => {
   const now = Date.now() / 1000;
   for (const job of state.jobs) {
     if (job.status !== "queued" && job.status !== "running") continue;
     const entry = jobEls.get(job.id);
-    if (entry) entry.refs.elapsed.textContent = elapsedText(job, now);
+    if (entry) entry.refs.time.textContent = timeInfo(job, now);
   }
 }, 1000);
 
 /* ==============================================================
-   Sparklines — SVG inline, linha 2px, área ~10%, dot com anel
+   Métricas — painel colapsável com resumo inline quando fechado
    ============================================================== */
-const tooltip = $("viz-tooltip");
+let metricsOpen = true;
 
-const chartsCfg = {
-  toks: { color: "var(--c-toks)", get: (s) => s.tok_s,         fmt: (v) => nf1.format(v) + " tok/s", domain: (vals) => [0, niceMax(vals, 10)] },
-  gpu:  { color: "var(--c-gpu)",  get: (s) => s.gpu_util,      fmt: (v) => nf0.format(v) + "%",      domain: () => [0, 100] },
-  vram: { color: "var(--c-vram)", get: (s) => s.vram_used_mib, fmt: (v) => nf0.format(v) + " MiB",   domain: (vals, total) => [0, total || niceMax(vals, 1024)] },
-  temp: { color: "var(--c-temp)", get: (s) => s.temp_c,        fmt: (v) => nf0.format(v) + " °C",    domain: (vals) => tempDomain(vals) },
+function metricsHintText() {
+  if (metricsOpen) return "";
+  const parts = [];
+  if (isNum(state.hint.tokS)) parts.push(nf1.format(state.hint.tokS) + " tok/s");
+  if (isNum(state.hint.gpu)) parts.push("GPU " + nf0.format(state.hint.gpu) + "%");
+  return parts.length ? "· " + parts.join(" · ") : "";
+}
+
+function setMetricsOpen(open) {
+  metricsOpen = open;
+  $("metrics-body").hidden = !open;
+  const btn = $("metrics-toggle");
+  btn.classList.toggle("open", open);
+  btn.setAttribute("aria-expanded", String(open));
+  $("metrics-hint").textContent = metricsHintText();
+}
+$("metrics-toggle").addEventListener("click", () => setMetricsOpen(!metricsOpen));
+
+/* ==============================================================
+   Sparklines — polyline 1.5px, viewBox 0 0 260 44, sem eixos
+   ============================================================== */
+const SPARKS = {
+  speed: { color: "var(--accent)", get: (s) => s.tok_s,         domain: null },
+  gpu:   { color: "var(--green)",  get: (s) => s.gpu_util,      domain: [0, 100] },
+  vram:  { color: "var(--purple)", get: (s) => s.vram_used_mib, domain: null /* [0, total] em runtime */ },
+  temp:  { color: "var(--amber)",  get: (s) => s.temp_c,        domain: [20, 90] },
 };
-const chartState = {}; // key -> { xs, ys, values, times, fmt, rectTop, padY... }
 
-function niceMax(vals, step) {
-  const m = Math.max(...vals.filter(isNum), 0);
-  return Math.max(step, Math.ceil((m * 1.1) / step) * step);
-}
-function tempDomain(vals) {
-  const nums = vals.filter(isNum);
-  if (!nums.length) return [0, 100];
-  const lo = Math.floor((Math.min(...nums) - 4) / 5) * 5;
-  const hi = Math.ceil((Math.max(...nums) + 4) / 5) * 5;
-  return [Math.max(0, lo), hi];
-}
-
-function drawSpark(key, history, total) {
-  const cfg = chartsCfg[key];
+function drawSpark(key, history, domainOverride) {
+  const cfg = SPARKS[key];
   const holder = $("spark-" + key);
-  const width = Math.max(holder.clientWidth || 240, 120);
-  const height = holder.clientHeight || 58;
-  const padX = 3, padTop = 6, padBot = 5, endDotR = 4;
-  const plotW = width - padX * 2 - endDotR - 2;
-
-  const samples = history.slice(-150);
+  const samples = history.slice(-60); // janela de 60 amostras (spec do handoff)
   const values = samples.map((s) => (isNum(cfg.get(s)) ? cfg.get(s) : null));
-  const times  = samples.map((s) => s.t);
   const nums = values.filter((v) => v !== null);
 
-  // limpa overlays antigos preservando o holder
-  holder.innerHTML = "";
-  delete chartState[key];
-
-  if (nums.length === 0) {
-    const empty = el("div", "spark-empty");
-    empty.textContent = samples.length ? "sem leituras" : "sem dados ainda";
-    holder.append(empty);
+  if (!nums.length) {
+    holder.innerHTML = '<div class="nodata">sem dados ainda</div>';
     return;
   }
 
-  const [dMin, dMax] = cfg.domain(values, total);
-  const span = dMax - dMin || 1;
+  let lo, hi;
+  const dom = domainOverride || cfg.domain;
+  if (dom) { [lo, hi] = dom; }
+  else { lo = Math.min(...nums); hi = Math.max(...nums); }
+  const span = (hi - lo) || 1;
+
   const n = values.length;
-  const x = (i) => padX + (n === 1 ? plotW / 2 : (i / (n - 1)) * plotW);
-  const y = (v) => padTop + (1 - (v - dMin) / span) * (height - padTop - padBot);
+  const x = (i) => (n === 1 ? 130 : (i / (n - 1)) * 260);
+  const y = (v) => 40 - ((v - lo) / span) * 36 + 2;
 
-  const xs = values.map((_, i) => x(i));
-  const ys = values.map((v) => (v === null ? null : y(v)));
-
-  // segmentos contínuos (quebra nos nulls)
+  // segmentos contínuos (quebra em amostras null, ex. tok_s sem requisição)
   const segs = [];
   let cur = [];
   values.forEach((v, i) => {
@@ -1027,251 +971,102 @@ function drawSpark(key, history, total) {
   });
   if (cur.length) segs.push(cur);
 
-  const y0 = height - padBot;
-  let paths = "";
+  let body = "";
   for (const seg of segs) {
-    const pts = seg.map((i) => `${xs[i].toFixed(1)},${ys[i].toFixed(1)}`);
     if (seg.length > 1) {
-      // área: wash a ~10% de opacidade
-      paths += `<path d="M${xs[seg[0]].toFixed(1)},${y0} L${pts.join(" L")} L${xs[seg[seg.length - 1]].toFixed(1)},${y0} Z" fill="${cfg.color}" fill-opacity="0.1" stroke="none"/>`;
-      // linha 2px round
-      paths += `<path d="M${pts.join(" L")}" fill="none" stroke="${cfg.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
-    }
-    // ponto isolado (segmento de 1 amostra)
-    if (seg.length === 1) {
-      paths += `<circle cx="${xs[seg[0]].toFixed(1)}" cy="${ys[seg[0]].toFixed(1)}" r="3" fill="${cfg.color}" stroke="var(--surface-1)" stroke-width="2"/>`;
+      const pts = seg.map((i) => `${x(i).toFixed(1)},${y(values[i]).toFixed(1)}`).join(" ");
+      body += `<polyline points="${pts}" fill="none" stroke="${cfg.color}" stroke-width="1.5" stroke-linejoin="round"></polyline>`;
+    } else {
+      body += `<circle cx="${x(seg[0]).toFixed(1)}" cy="${y(values[seg[0]]).toFixed(1)}" r="1.5" fill="${cfg.color}"></circle>`;
     }
   }
-  // marcador do valor corrente: dot ≥8px com anel de 2px na cor da superfície
-  const lastSeg = segs[segs.length - 1];
-  const li = lastSeg[lastSeg.length - 1];
-  const endDot = `<circle cx="${xs[li].toFixed(1)}" cy="${ys[li].toFixed(1)}" r="${endDotR}" fill="${cfg.color}" stroke="var(--surface-1)" stroke-width="2"/>`;
 
-  const svg =
-    `<svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-hidden="true">` +
-    // linha de base hairline, sólida, recessiva
-    `<line x1="${padX}" y1="${y0}" x2="${width - padX}" y2="${y0}" stroke="var(--grid)" stroke-width="1"/>` +
-    paths + endDot +
-    `</svg>`;
-
-  holder.innerHTML = svg;
-
-  // camada de hover (crosshair + dot fora do svg, sobrevivem ao re-render)
-  const cross = el("div", "crosshair");
-  const hdot = el("div", "hoverdot");
-  hdot.style.background = cfg.color;
-  holder.append(cross, hdot);
-
-  chartState[key] = { xs, ys, values, times, fmt: cfg.fmt, cross, hdot };
+  holder.innerHTML =
+    `<svg viewBox="0 0 260 44" preserveAspectRatio="none" aria-hidden="true">${body}</svg>`;
 }
-
-function bindSparkHover(key) {
-  const holder = $("spark-" + key);
-
-  holder.addEventListener("mousemove", (e) => {
-    const st = chartState[key];
-    if (!st) return;
-    const rect = holder.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    // amostra mais próxima
-    let best = 0, bestD = Infinity;
-    for (let i = 0; i < st.xs.length; i++) {
-      const d = Math.abs(st.xs[i] - mx);
-      if (d < bestD) { bestD = d; best = i; }
-    }
-    st.cross.style.display = "block";
-    st.cross.style.left = st.xs[best] + "px";
-    const v = st.values[best];
-    if (v !== null) {
-      st.hdot.style.display = "block";
-      st.hdot.style.left = st.xs[best] + "px";
-      st.hdot.style.top = st.ys[best] + "px";
-    } else {
-      st.hdot.style.display = "none";
-    }
-    tooltip.innerHTML = "";
-    const t = el("span", "t");
-    t.textContent = fmtClock(st.times[best]);
-    tooltip.append(t, document.createTextNode(v === null ? "sem leitura" : st.fmt(v)));
-    tooltip.style.display = "block";
-    const tw = tooltip.offsetWidth;
-    let tx = e.clientX + 14;
-    if (tx + tw > window.innerWidth - 8) tx = e.clientX - tw - 14;
-    tooltip.style.left = tx + "px";
-    tooltip.style.top = (e.clientY - 30) + "px";
-  });
-
-  holder.addEventListener("mouseleave", () => {
-    const st = chartState[key];
-    if (st) { st.cross.style.display = "none"; st.hdot.style.display = "none"; }
-    tooltip.style.display = "none";
-  });
-}
-Object.keys(chartsCfg).forEach(bindSparkHover);
 
 /* ==============================================================
    Métricas — render
    ============================================================== */
 function setText(id, txt) { $(id).textContent = txt; }
-function setValueUnit(id, txt, unit) {
-  const node = $(id);
-  node.innerHTML = "";
-  node.append(document.createTextNode(txt));
-  if (unit) {
-    const u = el("span", "unit");
-    u.textContent = unit;
-    node.append(u);
-  }
-}
-function setFlag(id, show, text, color) {
-  const flag = $(id);
-  flag.hidden = !show;
-  if (show) {
-    flag.querySelector(".dot").style.background = color;
-    flag.querySelector("span:last-child").textContent = text;
-  }
-}
 
 function renderModel(model) {
-  const empty = $("model-empty"), grid = $("model-grid"), badge = $("model-state");
-  if (!model) {
-    setText("model-id", "—");
-    grid.hidden = true;
-    badge.hidden = true;
-    empty.hidden = false;
-    return;
-  }
-  empty.hidden = true;
-  grid.hidden = false;
-  badge.hidden = false;
-  setText("model-id", model.id || "—");
+  const has = !!model;
+  $("model-head").hidden = !has;
+  $("model-fields").hidden = !has;
+  $("ctx-track").hidden = !has;
+  $("model-empty").hidden = has;
+  if (!has) return;
+
+  setText("model-name", model.id || "—");
+
+  const badge = $("model-badge");
+  const loaded = model.state === "loaded";
+  badge.textContent = loaded ? "carregado" : "descarregado";
+  badge.className = "badge " + (loaded ? "b-done" : "b-queued");
+
   setText("model-quant", model.quantization || "—");
-
-  const loaded = model.loaded_context_length, max = model.max_context_length;
+  const cl = model.loaded_context_length, cm = model.max_context_length;
   setText("model-ctx",
-    (isNum(loaded) ? nf0.format(loaded) : "—") + " / " + (isNum(max) ? nf0.format(max) : "—") + " tokens");
-  const pct = isNum(loaded) && isNum(max) && max > 0 ? Math.min(100, (loaded / max) * 100) : 0;
-  $("ctx-meter-fill").style.width = pct.toFixed(1) + "%";
-
-  const isLoaded = model.state === "loaded";
-  $("model-state-dot").className = "dot " + (isLoaded ? "ok" : "");
-  setText("model-state-text", isLoaded ? "carregado" : "descarregado");
+    (isNum(cl) ? nf0.format(cl) : "—") + " / " + (isNum(cm) ? nf0.format(cm) : "—") + " tokens");
+  const pct = isNum(cl) && isNum(cm) && cm > 0 ? Math.min(100, (cl / cm) * 100) : 0;
+  $("ctx-fill").style.width = pct.toFixed(1) + "%";
 }
 
 function renderLLM(llm) {
   if (!llm) return;
-  setText("llm-req", isNum(llm.requests_total) ? nf0.format(llm.requests_total) : "—");
-  setText("llm-active", isNum(llm.requests_active) ? nf0.format(llm.requests_active) : "—");
+  setText("st-req", isNum(llm.requests_total) ? nf0.format(llm.requests_total) : "—");
+  setText("st-active", isNum(llm.requests_active) ? nf0.format(llm.requests_active) : "—");
 
-  const p = $("llm-ptok"), c = $("llm-ctok");
+  const p = $("st-ptok"), c = $("st-ctok");
   p.textContent = isNum(llm.prompt_tokens_total) ? nfCompact.format(llm.prompt_tokens_total) : "—";
   p.title = isNum(llm.prompt_tokens_total) ? nf0.format(llm.prompt_tokens_total) + " tokens" : "";
   c.textContent = isNum(llm.completion_tokens_total) ? nfCompact.format(llm.completion_tokens_total) : "—";
   c.title = isNum(llm.completion_tokens_total) ? nf0.format(llm.completion_tokens_total) + " tokens" : "";
 
-  setValueUnit("v-toks", isNum(llm.tok_s_last) ? nf1.format(llm.tok_s_last) : "—", " tok/s");
-  setText("v-toks-avg", isNum(llm.tok_s_avg) ? nf1.format(llm.tok_s_avg) + " tok/s" : "—");
+  setText("c-speed", isNum(llm.tok_s_last) ? nf1.format(llm.tok_s_last) : "—");
+  setText("c-speed-sub",
+    "média da sessão: " + (isNum(llm.tok_s_avg) ? nf1.format(llm.tok_s_avg) + " tok/s" : "—"));
+  state.hint.tokS = isNum(llm.tok_s_last) ? llm.tok_s_last : null;
 }
 
 function renderGPU(gpu) {
-  const meter = $("vram-meter"), fill = $("vram-meter-fill");
   if (!gpu) {
-    setValueUnit("v-gpu", "—", "");
-    $("v-gpu-sub").textContent = "GPU indisponível";
-    setValueUnit("v-vram", "—", "");
-    setText("v-vram-total", "—");
-    meter.hidden = true;
-    setValueUnit("v-temp", "—", "");
-    setFlag("vram-flag", false);
-    setFlag("temp-flag", false);
+    setText("c-gpu", "—");
+    setText("c-gpu-sub", "GPU indisponível");
+    setText("c-vram", "—");
+    setText("c-vram-sub", "GPU indisponível");
+    setText("c-temp", "—");
+    state.hint.gpu = null;
     return;
   }
-  $("v-gpu-sub").textContent = "RTX 3050";
-  setValueUnit("v-gpu", isNum(gpu.util_pct) ? nf0.format(gpu.util_pct) : "—", "%");
+  setText("c-gpu", isNum(gpu.util_pct) ? nf0.format(gpu.util_pct) : "—");
+  setText("c-gpu-sub", "RTX 3050");
+  state.hint.gpu = isNum(gpu.util_pct) ? gpu.util_pct : null;
 
   const used = gpu.vram_used_mib, total = gpu.vram_total_mib;
-  setValueUnit("v-vram", isNum(used) ? nf0.format(used) : "—", " MiB");
-  setText("v-vram-total", isNum(total) ? nf0.format(total) : "—");
+  setText("c-vram", isNum(used) ? nf0.format(used) : "—");
+  let vramSub = "de " + (isNum(total) ? nf0.format(total) : "—") + " MiB";
+  if (isNum(used) && isNum(total) && total > 0 && used / total >= 0.9) vramSub += " · uso alto";
+  setText("c-vram-sub", vramSub);
 
-  if (isNum(used) && isNum(total) && total > 0) {
-    const frac = used / total;
-    meter.hidden = false;
-    // medidor: preenchimento carrega severidade; trilha em passo claro da mesma rampa
-    const fillColor = frac >= 0.97 ? "var(--st-critical)"
-                    : frac >= 0.90 ? "var(--st-warning)"
-                    : "var(--c-vram)";
-    fill.style.background = fillColor;
-    fill.style.width = Math.min(100, frac * 100).toFixed(1) + "%";
-    meter.style.background = `color-mix(in srgb, ${fillColor} 16%, var(--surface-1))`;
-    setFlag("vram-flag", frac >= 0.90,
-      frac >= 0.97 ? "quase cheia" : "uso alto",
-      frac >= 0.97 ? "var(--st-critical)" : "var(--st-warning)");
-  } else {
-    meter.hidden = true;
-    setFlag("vram-flag", false);
-  }
-
-  setValueUnit("v-temp", isNum(gpu.temp_c) ? nf0.format(gpu.temp_c) : "—", " °C");
-  setFlag("temp-flag", isNum(gpu.temp_c) && gpu.temp_c >= 83, "alta", "var(--st-serious)");
+  setText("c-temp", isNum(gpu.temp_c) ? nf0.format(gpu.temp_c) : "—");
 }
-
-function renderTable(history) {
-  const body = $("table-body");
-  body.innerHTML = "";
-  const rows = history.slice(-20).reverse();
-  if (!rows.length) {
-    const tr = el("tr");
-    const td = el("td");
-    td.colSpan = 5;
-    td.textContent = "sem dados ainda";
-    tr.append(td);
-    body.append(tr);
-    return;
-  }
-  for (const s of rows) {
-    const tr = el("tr");
-    const cells = [
-      fmtClock(s.t),
-      isNum(s.tok_s) ? nf1.format(s.tok_s) : "—",
-      isNum(s.gpu_util) ? nf0.format(s.gpu_util) : "—",
-      isNum(s.vram_used_mib) ? nf0.format(s.vram_used_mib) : "—",
-      isNum(s.temp_c) ? nf0.format(s.temp_c) : "—",
-    ];
-    for (const c of cells) {
-      const td = el("td");
-      td.textContent = c;
-      tr.append(td);
-    }
-    body.append(tr);
-  }
-}
-
-let lastHistory = [];
-let lastVramTotal = null;
 
 function renderMetrics(m) {
   renderModel(m.model ?? null);
   renderLLM(m.llm ?? null);
   renderGPU(m.gpu ?? null);
-  lastHistory = Array.isArray(m.history) ? m.history : [];
-  lastVramTotal = m.gpu && isNum(m.gpu.vram_total_mib) ? m.gpu.vram_total_mib : null;
-  drawAllSparks();
-  renderTable(lastHistory);
-}
 
-function drawAllSparks() {
-  drawSpark("toks", lastHistory);
-  drawSpark("gpu", lastHistory);
-  drawSpark("vram", lastHistory, lastVramTotal);
-  drawSpark("temp", lastHistory);
-}
+  const history = Array.isArray(m.history) ? m.history : [];
+  const total = m.gpu && isNum(m.gpu.vram_total_mib) ? m.gpu.vram_total_mib : null;
+  drawSpark("speed", history);
+  drawSpark("gpu", history);
+  drawSpark("vram", history, total ? [0, total] : null);
+  drawSpark("temp", history);
 
-// redesenha no resize (debounce simples)
-let resizeTimer = null;
-window.addEventListener("resize", () => {
-  clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(drawAllSparks, 180);
-});
+  $("metrics-hint").textContent = metricsHintText();
+}
 
 /* ==============================================================
    Início

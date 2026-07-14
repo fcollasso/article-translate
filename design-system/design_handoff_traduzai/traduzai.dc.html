@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta charset="utf-8">
+<title>traduzai</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;--bg:oklch(0.145 0.008 255);--surface:oklch(0.185 0.009 255);--surface-2:oklch(0.225 0.01 255);--border:oklch(0.27 0.012 255);--border-strong:oklch(0.34 0.014 255);--text:oklch(0.94 0.005 255);--text-2:oklch(0.7 0.012 255);--text-3:oklch(0.52 0.014 255);--accent:oklch(0.72 0.15 250);--accent-soft:oklch(0.72 0.15 250 / 0.14);--green:oklch(0.72 0.15 160);--green-soft:oklch(0.72 0.15 160 / 0.14);--amber:oklch(0.78 0.13 80);--amber-soft:oklch(0.78 0.13 80 / 0.14);--red:oklch(0.66 0.17 25);--shadow:0 1px 2px oklch(0 0 0/.25),0 8px 24px oklch(0 0 0/.25);background:var(--bg);color:var(--text);font-family:'Instrument Sans',sans-serif;transition:background .3s,color .3s;}
+body[data-theme="light"]{--bg:oklch(0.975 0.003 255);--surface:oklch(1 0 0);--surface-2:oklch(0.955 0.004 255);--border:oklch(0.9 0.006 255);--border-strong:oklch(0.82 0.01 255);--text:oklch(0.22 0.015 255);--text-2:oklch(0.45 0.015 255);--text-3:oklch(0.6 0.012 255);--accent:oklch(0.55 0.17 250);--accent-soft:oklch(0.55 0.17 250 / 0.1);--green:oklch(0.56 0.14 160);--green-soft:oklch(0.56 0.14 160 / 0.12);--amber:oklch(0.66 0.13 80);--amber-soft:oklch(0.66 0.13 80 / 0.14);--red:oklch(0.55 0.19 25);--shadow:0 1px 2px oklch(0 0 0/.06),0 8px 24px oklch(0 0 0/.06);}
+a{color:var(--accent);text-decoration:none;}a:hover{color:var(--accent);text-decoration:underline;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes barslide{from{background-position:0 0}to{background-position:32px 0}}
+</style>
+</helmet>
+<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:0 24px;">
+  <div style="width:100%;max-width:860px;display:flex;flex-direction:column;gap:28px;padding:28px 0 48px;">
+
+    <header data-screen-label="Topo" style="display:flex;align-items:center;justify-content:space-between;gap:16px;">
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <div style="display:flex;align-items:baseline;gap:2px;font-size:26px;font-weight:700;letter-spacing:-0.03em;">
+          <span>traduz</span><span style="color:var(--accent);">ai</span><span style="color:var(--green);font-size:30px;line-height:0;">.</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text-3);">
+          <span style="color:var(--text-2);">EN → PT-BR</span><span>·</span><span>pdf2zh_next</span><span>·</span><span>LM Studio local</span>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div style="display:flex;align-items:center;gap:7px;padding:7px 13px;border:1px solid var(--border);border-radius:999px;background:var(--surface);font-size:12.5px;font-weight:500;color:var(--text-2);">
+          <span style="width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse 2.4s ease-in-out infinite;"></span>
+          backend conectado
+        </div>
+        <button onClick="{{ toggleTheme }}" style="display:flex;align-items:center;gap:6px;padding:7px 13px;border:1px solid var(--border);border-radius:999px;background:var(--surface);color:var(--text-2);font-family:'Instrument Sans',sans-serif;font-size:12.5px;font-weight:500;cursor:pointer;transition:border-color .15s;" style-hover="border-color:var(--border-strong);color:var(--text);">
+          <span style="width:12px;height:12px;border-radius:50%;border:1.5px solid currentColor;background:linear-gradient(90deg,currentColor 50%,transparent 50%);"></span>
+          {{ themeLabel }}
+        </button>
+      </div>
+    </header>
+
+    <section data-screen-label="Upload" style="display:flex;flex-direction:column;gap:12px;">
+      <input type="file" accept=".pdf" ref="{{ fileRef }}" onChange="{{ onFile }}" style="display:none;">
+      <div onClick="{{ pickFile }}" onDragOver="{{ onDragOver }}" onDragLeave="{{ onDragLeave }}" onDrop="{{ onDrop }}" style="display:flex;flex-direction:column;align-items:center;gap:10px;padding:44px 24px;border:1.5px dashed {{ dropBorder }};border-radius:16px;background:{{ dropBg }};cursor:pointer;transition:border-color .2s,background .2s;text-align:center;" style-hover="border-color:var(--border-strong);">
+        <div style="width:44px;height:44px;border-radius:12px;background:var(--accent-soft);display:flex;align-items:center;justify-content:center;">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:600;color:var(--accent);">↑</span>
+        </div>
+        <div style="font-size:16px;font-weight:600;">Arraste um PDF aqui</div>
+        <div style="font-size:13.5px;color:var(--text-3);">ou clique para escolher — o artigo entra na fila de tradução</div>
+      </div>
+    </section>
+
+    <section data-screen-label="Trabalhos" style="display:flex;flex-direction:column;gap:12px;">
+      <div style="font-size:11.5px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-3);">Trabalhos</div>
+      <sc-for list="{{ jobs }}" as="job" hint-placeholder-count="1">
+        <div style="display:flex;flex-direction:column;gap:14px;padding:18px 20px;border:1px solid var(--border);border-radius:14px;background:var(--surface);box-shadow:var(--shadow);">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <span style="display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:11.5px;font-weight:600;background:{{ job.badgeBg }};color:{{ job.badgeColor }};">
+              <span style="width:6px;height:6px;border-radius:50%;background:currentColor;"></span>{{ job.statusLabel }}
+            </span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:600;">{{ job.name }}</span>
+            <span style="margin-left:auto;font-size:12.5px;color:var(--text-3);">{{ job.timeInfo }}</span>
+          </div>
+          <sc-if value="{{ job.active }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <div style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--text-2);">
+                <span>{{ job.stage }}</span>
+                <span style="font-family:'JetBrains Mono',monospace;">{{ job.pct }}%</span>
+              </div>
+              <div style="height:6px;border-radius:999px;background:var(--surface-2);overflow:hidden;">
+                <div style="height:100%;width:{{ job.pctW }};border-radius:999px;background:repeating-linear-gradient(90deg,var(--accent) 0 16px,oklch(from var(--accent) l c h / 0.75) 16px 32px);background-size:32px 100%;animation:barslide .8s linear infinite;transition:width .5s;"></div>
+              </div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ job.done }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex;flex-wrap:wrap;gap:8px;">
+              <sc-for list="{{ job.files }}" as="f" hint-placeholder-count="3">
+                <a href="#" onClick="{{ noop }}" style="display:flex;align-items:baseline;gap:7px;padding:8px 14px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);color:var(--text);font-size:13px;font-weight:600;text-decoration:none;transition:border-color .15s;" style-hover="border-color:var(--accent);text-decoration:none;color:var(--text);">
+                  <span style="color:var(--accent);font-family:'JetBrains Mono',monospace;">↓</span>{{ f.label }}
+                  <span style="font-weight:400;color:var(--text-3);font-size:12px;">{{ f.size }}</span>
+                </a>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
+      </sc-for>
+    </section>
+
+    <section data-screen-label="Métricas" style="display:flex;flex-direction:column;gap:12px;">
+      <button onClick="{{ toggleMetrics }}" style="display:flex;align-items:center;gap:9px;padding:0;border:none;background:none;cursor:pointer;font-family:'Instrument Sans',sans-serif;font-size:11.5px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-3);" style-hover="color:var(--text-2);">
+        <span style="display:inline-block;transition:transform .2s;transform:{{ chevRot }};font-size:10px;">▶</span>
+        Métricas do modelo
+        <span style="font-family:'JetBrains Mono',monospace;font-weight:500;letter-spacing:0;text-transform:none;color:var(--text-3);">{{ metricsHint }}</span>
+      </button>
+      <sc-if value="{{ metricsOpen }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          <div style="display:flex;flex-direction:column;gap:14px;padding:18px 20px;border:1px solid var(--border);border-radius:14px;background:var(--surface);box-shadow:var(--shadow);">
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:14.5px;font-weight:600;">qwen/qwen3-8b</span>
+              <span style="display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:11.5px;font-weight:600;background:var(--green-soft);color:var(--green);"><span style="width:6px;height:6px;border-radius:50%;background:currentColor;"></span>carregado</span>
+            </div>
+            <div style="display:flex;gap:36px;">
+              <div style="display:flex;flex-direction:column;gap:3px;">
+                <span style="font-size:12px;color:var(--text-3);">quantização</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:600;">Q4_K_M</span>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:3px;flex:1;">
+                <span style="font-size:12px;color:var(--text-3);">contexto carregado / máximo</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:600;">8.192 / 32.768 tokens</span>
+              </div>
+            </div>
+            <div style="height:5px;border-radius:999px;background:var(--surface-2);overflow:hidden;">
+              <div style="height:100%;width:25%;border-radius:999px;background:var(--accent);"></div>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+            <div style="display:flex;flex-direction:column;gap:5px;padding:16px 18px;border:1px solid var(--border);border-radius:14px;background:var(--surface);">
+              <span style="font-size:12.5px;color:var(--text-2);">Requisições</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:600;letter-spacing:-0.02em;">{{ reqs }}</span>
+              <span style="font-size:12px;color:var(--text-3);"><span style="color:var(--text-2);font-weight:600;">{{ activeReqs }}</span> ativas agora</span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:5px;padding:16px 18px;border:1px solid var(--border);border-radius:14px;background:var(--surface);">
+              <span style="font-size:12.5px;color:var(--text-2);">Tokens de prompt</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:600;letter-spacing:-0.02em;">{{ promptTok }}</span>
+              <span style="font-size:12px;color:var(--text-3);">acumulados na sessão</span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:5px;padding:16px 18px;border:1px solid var(--border);border-radius:14px;background:var(--surface);">
+              <span style="font-size:12.5px;color:var(--text-2);">Tokens de resposta</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:600;letter-spacing:-0.02em;">{{ respTok }}</span>
+              <span style="font-size:12px;color:var(--text-3);">acumulados na sessão</span>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <sc-for list="{{ charts }}" as="c" hint-placeholder-count="4">
+              <div style="display:flex;flex-direction:column;gap:4px;padding:16px 18px;border:1px solid var(--border);border-radius:14px;background:var(--surface);">
+                <div style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text-2);">
+                  <span style="width:8px;height:8px;border-radius:3px;background:{{ c.color }};"></span>{{ c.label }}
+                </div>
+                <div style="display:flex;align-items:baseline;gap:5px;">
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:24px;font-weight:600;letter-spacing:-0.02em;">{{ c.value }}</span>
+                  <span style="font-size:12px;color:var(--text-3);">{{ c.unit }}</span>
+                </div>
+                <div style="font-size:12px;color:var(--text-3);min-height:15px;">{{ c.sub }}</div>
+                <svg viewBox="0 0 260 44" preserveAspectRatio="none" style="width:100%;height:44px;margin-top:6px;">
+                  <polyline points="{{ c.points }}" fill="none" stroke="{{ c.color }}" stroke-width="1.5" stroke-linejoin="round"></polyline>
+                </svg>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+    </section>
+
+    <footer style="margin-top:12px;display:flex;justify-content:space-between;align-items:center;font-size:12.5px;color:var(--text-3);">
+      <span style="font-style:italic;">“O que eu não consigo criar, eu não entendo.” — Richard Feynman</span>
+      <a href="Design System.dc.html" style="font-size:12px;">design system →</a>
+    </footer>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;defaultTheme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;dark&quot;,&quot;light&quot;],&quot;default&quot;:&quot;dark&quot;,&quot;tsType&quot;:&quot;'dark'|'light'&quot;,&quot;section&quot;:&quot;Aparência&quot;},&quot;liveMetrics&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Comportamento&quot;}}">
+class Component extends DCLogic {
+  state = {
+    theme: null, metricsOpen: true, dragging: false,
+    reqs: 64, activeReqs: 0, promptTok: 62100, respTok: 30700,
+    tokS: 10.8, gpu: [], vram: [], temp: [], speed: [],
+    jobs: [{ id: 1, name: '2511.15247.pdf', status: 'done', pct: 100, timeInfo: 'enviado às 14:18 · concluído às 14:33' }]
+  };
+  componentDidMount() {
+    const t = this.props.defaultTheme ?? 'dark';
+    document.body.dataset.theme = t;
+    this.setState({ theme: t, gpu: this.seed(19, 8), vram: this.seed(91, 1.5), temp: this.seed(36, 2), speed: this.seed(10.8, 1.2) });
+    if (this.props.liveMetrics ?? true) this.timer = setInterval(() => this.tick(), 1200);
+  }
+  componentWillUnmount() { clearInterval(this.timer); }
+  seed(base, jitter) { return Array.from({ length: 60 }, () => base + (Math.random() - .5) * jitter * 2); }
+  push(arr, v) { const a = arr.slice(-59); a.push(v); return a; }
+  tick() {
+    this.setState(s => {
+      const active = s.jobs.some(j => j.status === 'active');
+      const gpuV = active ? 30 + Math.random() * 45 : 8 + Math.random() * 14;
+      const spdV = Math.max(4, s.tokS + (Math.random() - .5) * 1.6);
+      const ns = {
+        gpu: this.push(s.gpu, gpuV), vram: this.push(s.vram, 90 + Math.random() * 3),
+        temp: this.push(s.temp, (active ? 48 : 36) + (Math.random() - .5) * 3),
+        speed: this.push(s.speed, spdV), tokS: spdV,
+        jobs: s.jobs.map(j => {
+          if (j.status !== 'active') return j;
+          const pct = Math.min(100, j.pct + Math.random() * 4.5);
+          if (pct >= 100) return { ...j, status: 'done', pct: 100, timeInfo: 'concluído agora' };
+          return { ...j, pct };
+        })
+      };
+      if (active) { ns.reqs = s.reqs + (Math.random() < .5 ? 1 : 0); ns.promptTok = s.promptTok + Math.round(Math.random() * 900); ns.respTok = s.respTok + Math.round(spdV * 1.2); ns.activeReqs = 1; }
+      else ns.activeReqs = 0;
+      return ns;
+    });
+  }
+  addJob(name) {
+    this.setState(s => ({ jobs: [{ id: Date.now(), name, status: 'active', pct: 0, timeInfo: 'enviado agora' }, ...s.jobs], metricsOpen: true }));
+  }
+  pts(arr, max, min) {
+    if (!arr.length) return '';
+    const lo = min ?? Math.min(...arr), hi = max ?? Math.max(...arr), span = (hi - lo) || 1;
+    return arr.map((v, i) => `${(i / (arr.length - 1) * 260).toFixed(1)},${(40 - (v - lo) / span * 36 + 2).toFixed(1)}`).join(' ');
+  }
+  fmt(n) { return n >= 1000 ? (n / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' mil' : String(n); }
+  renderVals() {
+    const s = this.state, fileRef = this.fileRef ?? (this.fileRef = React.createRef());
+    const stages = p => p < 20 ? 'extraindo texto do PDF' : p < 90 ? 'traduzindo parágrafos' : 'gerando PDFs finais';
+    return {
+      themeLabel: s.theme === 'light' ? 'escuro' : 'claro',
+      toggleTheme: () => { const t = s.theme === 'light' ? 'dark' : 'light'; document.body.dataset.theme = t; this.setState({ theme: t }); },
+      toggleMetrics: () => this.setState({ metricsOpen: !s.metricsOpen }),
+      metricsOpen: s.metricsOpen,
+      chevRot: s.metricsOpen ? 'rotate(90deg)' : 'rotate(0deg)',
+      metricsHint: s.metricsOpen ? '' : `· ${s.tokS.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} tok/s · GPU ${Math.round(s.gpu[s.gpu.length - 1] ?? 0)}%`,
+      fileRef,
+      pickFile: () => fileRef.current && fileRef.current.click(),
+      onFile: e => { const f = e.target.files[0]; if (f) this.addJob(f.name); e.target.value = ''; },
+      onDragOver: e => { e.preventDefault(); if (!s.dragging) this.setState({ dragging: true }); },
+      onDragLeave: () => this.setState({ dragging: false }),
+      onDrop: e => { e.preventDefault(); this.setState({ dragging: false }); const f = e.dataTransfer.files[0]; this.addJob(f ? f.name : 'artigo.pdf'); },
+      dropBorder: s.dragging ? 'var(--accent)' : 'var(--border-strong)',
+      dropBg: s.dragging ? 'var(--accent-soft)' : 'var(--surface)',
+      noop: e => e.preventDefault(),
+      jobs: s.jobs.map(j => ({
+        ...j, active: j.status === 'active', done: j.status === 'done',
+        statusLabel: j.status === 'active' ? 'traduzindo' : 'concluído',
+        badgeBg: j.status === 'active' ? 'var(--accent-soft)' : 'var(--green-soft)',
+        badgeColor: j.status === 'active' ? 'var(--accent)' : 'var(--green)',
+        stage: stages(j.pct), pct: Math.round(j.pct), pctW: j.pct.toFixed(1) + '%',
+        files: [{ label: 'PDF bilíngue (dual)', size: '8,7 MB' }, { label: 'Glossário (CSV)', size: '21,6 KB' }, { label: 'PDF traduzido (mono)', size: '4,8 MB' }]
+      })),
+      reqs: String(s.reqs), activeReqs: String(s.activeReqs),
+      promptTok: this.fmt(s.promptTok), respTok: this.fmt(s.respTok),
+      charts: [
+        { label: 'Velocidade de geração', color: 'var(--accent)', value: s.tokS.toLocaleString('pt-BR', { maximumFractionDigits: 1 }), unit: 'tok/s', sub: 'média da sessão: 11,9 tok/s', points: this.pts(s.speed) },
+        { label: 'Utilização da GPU', color: 'var(--green)', value: String(Math.round(s.gpu[s.gpu.length - 1] ?? 0)), unit: '%', sub: 'RTX 3050', points: this.pts(s.gpu, 100, 0) },
+        { label: 'VRAM', color: 'oklch(0.72 0.15 290)', value: '7.500', unit: 'MiB', sub: 'de 8.192 MiB · uso alto', points: this.pts(s.vram, 100, 0) },
+        { label: 'Temperatura', color: 'var(--amber)', value: String(Math.round(s.temp[s.temp.length - 1] ?? 36)), unit: '°C', sub: 'limite: 83 °C', points: this.pts(s.temp, 90, 20) }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

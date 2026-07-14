@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta charset="utf-8">
+<title>traduzai — design system</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;--bg:oklch(0.145 0.008 255);--surface:oklch(0.185 0.009 255);--surface-2:oklch(0.225 0.01 255);--border:oklch(0.27 0.012 255);--border-strong:oklch(0.34 0.014 255);--text:oklch(0.94 0.005 255);--text-2:oklch(0.7 0.012 255);--text-3:oklch(0.52 0.014 255);--accent:oklch(0.72 0.15 250);--accent-soft:oklch(0.72 0.15 250 / 0.14);--green:oklch(0.72 0.15 160);--green-soft:oklch(0.72 0.15 160 / 0.14);--amber:oklch(0.78 0.13 80);--amber-soft:oklch(0.78 0.13 80 / 0.14);--red:oklch(0.66 0.17 25);--red-soft:oklch(0.66 0.17 25 / 0.14);--shadow:0 1px 2px oklch(0 0 0/.25),0 8px 24px oklch(0 0 0/.25);background:var(--bg);color:var(--text);font-family:'Instrument Sans',sans-serif;transition:background .3s,color .3s;}
+body[data-theme="light"]{--bg:oklch(0.975 0.003 255);--surface:oklch(1 0 0);--surface-2:oklch(0.955 0.004 255);--border:oklch(0.9 0.006 255);--border-strong:oklch(0.82 0.01 255);--text:oklch(0.22 0.015 255);--text-2:oklch(0.45 0.015 255);--text-3:oklch(0.6 0.012 255);--accent:oklch(0.55 0.17 250);--accent-soft:oklch(0.55 0.17 250 / 0.1);--green:oklch(0.56 0.14 160);--green-soft:oklch(0.56 0.14 160 / 0.12);--amber:oklch(0.66 0.13 80);--amber-soft:oklch(0.66 0.13 80 / 0.14);--red:oklch(0.55 0.19 25);--red-soft:oklch(0.55 0.19 25 / 0.12);--shadow:0 1px 2px oklch(0 0 0/.06),0 8px 24px oklch(0 0 0/.06);}
+a{color:var(--accent);text-decoration:none;}a:hover{text-decoration:underline;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+</style>
+</helmet>
+<div style="min-height:100vh;display:flex;justify-content:center;padding:0 24px;">
+  <div style="width:100%;max-width:860px;display:flex;flex-direction:column;gap:48px;padding:36px 0 72px;">
+
+    <header data-screen-label="Capa" style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;">
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <div style="display:flex;align-items:baseline;gap:2px;font-size:34px;font-weight:700;letter-spacing:-0.03em;">
+          <span>traduz</span><span style="color:var(--accent);">ai</span><span style="color:var(--green);font-size:40px;line-height:0;">.</span>
+        </div>
+        <div style="font-size:15px;color:var(--text-2);max-width:520px;line-height:1.55;">Design system da plataforma de tradução de artigos científicos. Dark refinado, denso na medida, com monospace reservado para dados técnicos.</div>
+        <a href="traduzai.dc.html" style="font-size:13px;">← voltar para a plataforma</a>
+      </div>
+      <button onClick="{{ toggleTheme }}" style="display:flex;align-items:center;gap:6px;padding:7px 13px;border:1px solid var(--border);border-radius:999px;background:var(--surface);color:var(--text-2);font-family:'Instrument Sans',sans-serif;font-size:12.5px;font-weight:500;cursor:pointer;" style-hover="border-color:var(--border-strong);color:var(--text);">
+        <span style="width:12px;height:12px;border-radius:50%;border:1.5px solid currentColor;background:linear-gradient(90deg,currentColor 50%,transparent 50%);"></span>
+        {{ themeLabel }}
+      </button>
+    </header>
+
+    <section data-screen-label="Cores" style="display:flex;flex-direction:column;gap:16px;">
+      <div style="font-size:11.5px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-3);">01 · Cores</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
+        <sc-for list="{{ swatches }}" as="sw" hint-placeholder-count="8">
+          <div style="display:flex;flex-direction:column;gap:8px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--surface);">
+            <div style="height:56px;border-radius:8px;background:{{ sw.css }};border:1px solid var(--border);"></div>
+            <div style="display:flex;flex-direction:column;gap:2px;">
+              <span style="font-size:12.5px;font-weight:600;">{{ sw.name }}</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--text-3);">{{ sw.token }}</span>
+              <span style="font-size:11px;color:var(--text-3);">{{ sw.use }}</span>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="padding:14px 18px;border:1px solid var(--border);border-radius:12px;background:var(--surface-2);font-size:13px;color:var(--text-2);line-height:1.6;">Todos os acentos vivem em <span style="font-family:'JetBrains Mono',monospace;font-size:12px;">oklch</span> com o mesmo par lightness/chroma (0.72 / 0.15 no escuro) — só o hue varia. Versões <span style="font-family:'JetBrains Mono',monospace;font-size:12px;">-soft</span> (alpha 0.14) servem de fundo para badges e ícones. Nunca use acento como cor de texto longo.</div>
+    </section>
+
+    <section data-screen-label="Tipografia" style="display:flex;flex-direction:column;gap:16px;">
+      <div style="font-size:11.5px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-3);">02 · Tipografia</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div style="display:flex;flex-direction:column;gap:6px;padding:18px 20px;border:1px solid var(--border);border-radius:12px;background:var(--surface);">
+          <span style="font-size:26px;font-weight:700;letter-spacing:-0.03em;">Instrument Sans</span>
+          <span style="font-size:12.5px;color:var(--text-3);">UI, títulos e corpo · 400 / 500 / 600 / 700</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;padding:18px 20px;border:1px solid var(--border);border-radius:12px;background:var(--surface);">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:600;">JetBrains Mono</span>
+          <span style="font-size:12.5px;color:var(--text-3);">números, nomes de arquivo, modelos, tokens · nunca em parágrafos</span>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:0;border:1px solid var(--border);border-radius:12px;background:var(--surface);overflow:hidden;">
+        <sc-for list="{{ typeScale }}" as="t" hint-placeholder-count="5">
+          <div style="display:flex;align-items:baseline;gap:20px;padding:14px 20px;border-bottom:1px solid var(--border);">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);width:150px;flex-shrink:0;">{{ t.token }}</span>
+            <span style="font-size:{{ t.px }};font-weight:{{ t.weight }};letter-spacing:{{ t.ls }};font-family:{{ t.family }};">{{ t.sample }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </section>
+
+    <section data-screen-label="Espaçamento" style="display:flex;flex-direction:column;gap:16px;">
+      <div style="font-size:11.5px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-3);">03 · Espaçamento &amp; raios</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div style="display:flex;flex-direction:column;gap:10px;padding:18px 20px;border:1px solid var(--border);border-radius:12px;background:var(--surface);">
+          <span style="font-size:12.5px;font-weight:600;color:var(--text-2);">Escala de espaço — base 4px</span>
+          <sc-for list="{{ spaces }}" as="sp" hint-placeholder-count="6">
+            <div style="display:flex;align-items:center;gap:12px;">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);width:64px;">{{ sp.token }}</span>
+              <div style="height:14px;width:{{ sp.w }};border-radius:3px;background:var(--accent-soft);border:1px solid var(--accent);"></div>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);">{{ sp.px }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;padding:18px 20px;border:1px solid var(--border);border-radius:12px;background:var(--surface);">
+          <span style="font-size:12.5px;font-weight:600;color:var(--text-2);">Raios</span>
+          <div style="display:flex;gap:12px;align-items:flex-end;">
+            <sc-for list="{{ radii }}" as="r" hint-placeholder-count="4">
+              <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
+                <div style="width:64px;height:64px;border:1.5px solid var(--border-strong);border-radius:{{ r.px }};background:var(--surface-2);"></div>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--text-3);">{{ r.token }}</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--text-3);">{{ r.px }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <span style="font-size:12px;color:var(--text-3);line-height:1.5;">Cards 14px · controles 10px · pills 999px. Nunca misture raios no mesmo nível hierárquico.</span>
+        </div>
+      </div>
+    </section>
+
+    <section data-screen-label="Botões" style="display:flex;flex-direction:column;gap:16px;">
+      <div style="font-size:11.5px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-3);">04 · Botões</div>
+      <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:22px;border:1px solid var(--border);border-radius:12px;background:var(--surface);">
+        <button style="padding:9px 18px;border:none;border-radius:10px;background:var(--accent);color:oklch(0.13 0.02 255);font-family:'Instrument Sans',sans-serif;font-size:13.5px;font-weight:600;cursor:pointer;" style-hover="filter:brightness(1.1);">Traduzir artigo</button>
+        <button style="padding:9px 18px;border:1px solid var(--border-strong);border-radius:10px;background:var(--surface-2);color:var(--text);font-family:'Instrument Sans',sans-serif;font-size:13.5px;font-weight:600;cursor:pointer;" style-hover="border-color:var(--accent);">Baixar glossário</button>
+        <button style="padding:9px 18px;border:none;border-radius:10px;background:none;color:var(--text-2);font-family:'Instrument Sans',sans-serif;font-size:13.5px;font-weight:600;cursor:pointer;" style-hover="color:var(--text);background:var(--surface-2);">Cancelar</button>
+        <button style="padding:9px 18px;border:1px solid var(--red);border-radius:10px;background:var(--red-soft);color:var(--red);font-family:'Instrument Sans',sans-serif;font-size:13.5px;font-weight:600;cursor:pointer;" style-hover="filter:brightness(1.1);">Remover job</button>
+        <button disabled style="padding:9px 18px;border:none;border-radius:10px;background:var(--surface-2);color:var(--text-3);font-family:'Instrument Sans',sans-serif;font-size:13.5px;font-weight:600;cursor:not-allowed;">Desabilitado</button>
+      </div>
+      <div style="font-size:12.5px;color:var(--text-3);">primário (1 por tela) · secundário · ghost · destrutivo · desabilitado</div>
+    </section>
+
+    <section data-screen-label="Badges" style="display:flex;flex-direction:column;gap:16px;">
+      <div style="font-size:11.5px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-3);">05 · Badges de status</div>
+      <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:22px;border:1px solid var(--border);border-radius:12px;background:var(--surface);">
+        <sc-for list="{{ badges }}" as="b" hint-placeholder-count="5">
+          <span style="display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:11.5px;font-weight:600;background:{{ b.bg }};color:{{ b.color }};">
+            <span style="width:6px;height:6px;border-radius:50%;background:currentColor;"></span>{{ b.label }}
+          </span>
+        </sc-for>
+        <span style="display:flex;align-items:center;gap:7px;padding:7px 13px;border:1px solid var(--border);border-radius:999px;background:var(--surface);font-size:12.5px;font-weight:500;color:var(--text-2);">
+          <span style="width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse 2.4s ease-in-out infinite;"></span>backend conectado
+        </span>
+      </div>
+      <div style="font-size:12.5px;color:var(--text-3);">Ponto sempre em <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;">currentColor</span>; fundo sempre a variante -soft da mesma cor. Pulso reservado a estados vivos (conexão, tradução em andamento).</div>
+    </section>
+
+    <section data-screen-label="Cards e progresso" style="display:flex;flex-direction:column;gap:16px;">
+      <div style="font-size:11.5px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-3);">06 · Cards, progresso &amp; métricas</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div style="display:flex;flex-direction:column;gap:12px;padding:18px 20px;border:1px solid var(--border);border-radius:14px;background:var(--surface);box-shadow:var(--shadow);">
+          <span style="font-size:12.5px;font-weight:600;color:var(--text-2);">Barra de progresso — job ativo</span>
+          <div style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--text-2);"><span>traduzindo parágrafos</span><span style="font-family:'JetBrains Mono',monospace;">62%</span></div>
+          <div style="height:6px;border-radius:999px;background:var(--surface-2);overflow:hidden;"><div style="height:100%;width:62%;border-radius:999px;background:var(--accent);"></div></div>
+          <span style="font-size:12.5px;font-weight:600;color:var(--text-2);margin-top:6px;">Barra estática — contexto / VRAM</span>
+          <div style="height:5px;border-radius:999px;background:var(--surface-2);overflow:hidden;"><div style="height:100%;width:25%;border-radius:999px;background:var(--accent);"></div></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:5px;padding:16px 18px;border:1px solid var(--border);border-radius:14px;background:var(--surface);">
+          <div style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text-2);"><span style="width:8px;height:8px;border-radius:3px;background:var(--green);"></span>Card de métrica</div>
+          <div style="display:flex;align-items:baseline;gap:5px;"><span style="font-family:'JetBrains Mono',monospace;font-size:24px;font-weight:600;letter-spacing:-0.02em;">19</span><span style="font-size:12px;color:var(--text-3);">%</span></div>
+          <div style="font-size:12px;color:var(--text-3);">rótulo secundário</div>
+          <svg viewBox="0 0 260 44" preserveAspectRatio="none" style="width:100%;height:44px;margin-top:6px;"><polyline points="0,30 20,28 40,32 60,26 80,30 100,22 120,28 140,25 160,30 180,18 200,26 220,24 240,28 260,20" fill="none" stroke="var(--green)" stroke-width="1.5" stroke-linejoin="round"></polyline></svg>
+        </div>
+      </div>
+      <div style="font-size:12.5px;color:var(--text-3);">Valor grande sempre em mono 24–26px; sparkline 44px de altura, stroke 1.5, sem preenchimento nem eixos.</div>
+    </section>
+
+    <section data-screen-label="Princípios" style="display:flex;flex-direction:column;gap:16px;">
+      <div style="font-size:11.5px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-3);">07 · Princípios</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <sc-for list="{{ principles }}" as="p" hint-placeholder-count="4">
+          <div style="display:flex;flex-direction:column;gap:6px;padding:16px 18px;border:1px solid var(--border);border-radius:12px;background:var(--surface);">
+            <span style="font-size:13.5px;font-weight:600;">{{ p.title }}</span>
+            <span style="font-size:12.5px;color:var(--text-2);line-height:1.55;">{{ p.body }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </section>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { theme: null };
+  componentDidMount() { const t = document.body.dataset.theme || 'dark'; document.body.dataset.theme = t; this.setState({ theme: t }); }
+  renderVals() {
+    const s = this.state;
+    return {
+      themeLabel: s.theme === 'light' ? 'escuro' : 'claro',
+      toggleTheme: () => { const t = s.theme === 'light' ? 'dark' : 'light'; document.body.dataset.theme = t; this.setState({ theme: t }); },
+      swatches: [
+        { name: 'Fundo', token: '--bg', css: 'var(--bg)', use: 'página' },
+        { name: 'Superfície', token: '--surface', css: 'var(--surface)', use: 'cards' },
+        { name: 'Superfície 2', token: '--surface-2', css: 'var(--surface-2)', use: 'trilhas, hovers' },
+        { name: 'Borda', token: '--border', css: 'var(--border)', use: 'contornos' },
+        { name: 'Azul', token: '--accent', css: 'var(--accent)', use: 'ação, progresso' },
+        { name: 'Verde', token: '--green', css: 'var(--green)', use: 'sucesso, conexão' },
+        { name: 'Âmbar', token: '--amber', css: 'var(--amber)', use: 'atenção, calor' },
+        { name: 'Vermelho', token: '--red', css: 'var(--red)', use: 'erro, destrutivo' }
+      ],
+      typeScale: [
+        { token: 'display / 26·700', px: '26px', weight: '700', ls: '-0.03em', family: "'Instrument Sans',sans-serif", sample: 'traduzai — wordmark' },
+        { token: 'title / 16·600', px: '16px', weight: '600', ls: '0', family: "'Instrument Sans',sans-serif", sample: 'Arraste um PDF aqui' },
+        { token: 'body / 13.5·400', px: '13.5px', weight: '400', ls: '0', family: "'Instrument Sans',sans-serif", sample: 'o artigo entra na fila de tradução' },
+        { token: 'label / 11.5·600 caps', px: '11.5px', weight: '600', ls: '0.12em', family: "'Instrument Sans',sans-serif", sample: 'MÉTRICAS DO MODELO' },
+        { token: 'data / 24·600 mono', px: '24px', weight: '600', ls: '-0.02em', family: "'JetBrains Mono',monospace", sample: '10,8 tok/s' }
+      ],
+      spaces: [
+        { token: 'space-1', px: '4px', w: '4px' }, { token: 'space-2', px: '8px', w: '8px' },
+        { token: 'space-3', px: '12px', w: '12px' }, { token: 'space-4', px: '16px', w: '16px' },
+        { token: 'space-5', px: '24px', w: '24px' }, { token: 'space-6', px: '32px', w: '32px' }
+      ],
+      radii: [
+        { token: 'r-control', px: '10px' }, { token: 'r-card', px: '14px' },
+        { token: 'r-zone', px: '16px' }, { token: 'r-pill', px: '999px' }
+      ],
+      badges: [
+        { label: 'na fila', bg: 'var(--surface-2)', color: 'var(--text-2)' },
+        { label: 'traduzindo', bg: 'var(--accent-soft)', color: 'var(--accent)' },
+        { label: 'concluído', bg: 'var(--green-soft)', color: 'var(--green)' },
+        { label: 'uso alto', bg: 'var(--amber-soft)', color: 'var(--amber)' },
+        { label: 'falhou', bg: 'var(--red-soft)', color: 'var(--red)' }
+      ],
+      principles: [
+        { title: 'Traduzir é o foco', body: 'Upload e jobs vêm primeiro; métricas do modelo são colapsáveis e nunca competem com o fluxo principal.' },
+        { title: 'Mono só para dados', body: 'JetBrains Mono marca o que é técnico: números, arquivos, modelos, tokens. Todo o resto é Instrument Sans.' },
+        { title: 'Cor com propósito', body: 'Azul = ação e progresso. Verde = sucesso e conexão. Âmbar = atenção. Cinzas fazem o resto do trabalho.' },
+        { title: 'Dois temas, um sistema', body: 'Todos os componentes leem tokens; nenhum valor de cor hardcoded fora da paleta. O toggle troca o tema inteiro.' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

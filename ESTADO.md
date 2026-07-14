@@ -53,6 +53,12 @@ passa a rodar no desktop (i9-10900F + RTX 3050 8GB + 64GB RAM).** CLAUDE.md atua
 - Teste e2e concluído: upload via API ok, rejeição de não-PDF ok, downloads ok. **O mesmo paper caiu de ~46 min para 14,8 min com QPS 4** (64 requisições, 62k tokens de prompt, 31k de resposta; GPU ~93%, 60°C, PC utilizável). O tok/s por requisição cai (~12) porque 4 dividem a GPU, mas o throughput agregado triplica
 - Decisão: manter o `.dual.pdf` — custa só montagem de PDF (zero tokens/GPU), e serve de auditoria da tradução contra o original
 
+### Design system "traduzai" implementado (mesma sessão)
+- Felipe gerou um design system hifi via Claude Design; handoff descompactado em `design-system/design_handoff_traduzai/` (README com tokens oklch + protótipo `traduzai.dc.html`)
+- `frontend/index.html` reescrito pixel-perfect pelo agente de design: marca "traduzai.", coluna única 860px, temas dark/light (toggle persistido, default dark), Instrument Sans + JetBrains Mono via Google Fonts (com fallbacks offline), dropzone, barra de progresso listrada com etapas, métricas colapsáveis (3 stats + 2×2 sparklines), footer Feynman. Validado com Chrome headless contra o protótipo nos 2 temas + contra o backend real
+- Backend ganhou **progresso real do job** (`Job.progress` 0–100): o traduzir.py roda sob pseudo-TTY para o rich renderizar as barras do babeldoc, e o server parseia a barra geral `translate x/100` (fonte primária) + contadores por etapa (sinal precoce), com guard monotônico contra os resets visuais do rich. Frames de progresso no log limitados a ~1/s; log_tail agora vem de memória
+- Estágios do babeldoc mapeados em `STAGE_BOUNDS` no server.py (pesos empíricos; tradução = 15–88%)
+
 ### Próximos passos
 1. Comparar `output/2511.15247.pt-BR.mono.pdf` com a versão do Linnk
 2. Usar o frontend no dia a dia; ajustar o que incomodar

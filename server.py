@@ -13,8 +13,10 @@ How metrics work:
   /api/v0/models endpoint.
 """
 
-import asyncio
+import os
+import pty
 import re
+import select
 import shutil
 import subprocess
 import sys
@@ -29,6 +31,7 @@ import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
 
 from traduzir import load_env
 
@@ -54,6 +57,28 @@ FILE_LABELS = [
     (".dual.pdf", "PDF bilíngue (dual)"),
     (".glossary.csv", "Glossário (CSV)"),
 ]
+
+# babeldoc pipeline stages mapped to overall-progress ranges. Weights are
+# empirical: translation dominates wall-clock time by far.
+STAGE_BOUNDS = {
+    "DetectScannedFile": (0, 2),
+    "Parse PDF and Create Intermediate Representation": (2, 4),
+    "Parse Page Layout": (4, 6),
+    "Parse Paragraphs": (6, 7),
+    "Parse Formulas and Styles": (7, 8),
+    "Automatic Term Extraction": (8, 15),
+    "Translate Paragraphs": (15, 88),
+    "Typesetting": (88, 93),
+    "Add Fonts": (93, 96),
+    "Generate drawing instructions": (96, 97),
+    "Subset font": (97, 98),
+    "Save PDF": (98, 100),
+}
+PROGRESS_RE = re.compile(
+    r"(?P<stage>[A-Za-z][\w /,()-]*?) \(\d+/\d+\)\s+\S*\s*(?P<x>\d+)/(?P<y>\d+)"
+)
+# babeldoc's overall bar ("translate ━━━ 42/100") — authoritative when present
+OVERALL_RE = re.compile(r"^translate\s+\S*\s*(?P<x>\d+)/100\b")
 
 
 # ---------------------------------------------------------------- LLM stats
@@ -177,18 +202,15 @@ class Job:
     started_at: float | None = None
     finished_at: float | None = None
     error: str | None = None
+    progress: float | None = None  # 0-100 while running
+    _tail: deque = field(default_factory=lambda: deque(maxlen=60), repr=False)
 
     @property
     def log_path(self) -> Path:
         return self.out_dir / "run.log"
 
     def log_tail(self, max_chars: int = 4000) -> str:
-        try:
-            text = self.log_path.read_text(encoding="utf-8", errors="replace")[-max_chars:]
-            text = ANSI_RE.sub("", text).replace("\r", "\n")
-            return "\n".join(line for line in text.splitlines() if line.strip())[-max_chars:]
-        except OSError:
-            return ""
+        return "\n".join(self._tail)[-max_chars:]
 
     def files(self) -> list[dict]:
         found = []
@@ -207,6 +229,7 @@ class Job:
             "id": self.id, "filename": self.filename, "status": self.status,
             "created_at": self.created_at, "started_at": self.started_at,
             "finished_at": self.finished_at, "error": self.error,
+            "progress": round(self.progress, 1) if self.progress is not None else None,
             "log_tail": self.log_tail() if self.status in ("running", "error") else "",
             "files": self.files() if self.status == "done" else [],
         }
@@ -216,6 +239,65 @@ JOBS: dict[str, Job] = {}
 JOB_ORDER: list[str] = []  # most recent first
 JOB_QUEUE: deque[str] = deque()
 JOBS_LOCK = threading.Lock()
+
+
+def _stage_progress(line: str) -> float | None:
+    overall = OVERALL_RE.match(line)
+    if overall:
+        return float(overall.group("x"))
+    m = PROGRESS_RE.search(line)
+    if not m:
+        return None
+    lo_hi = STAGE_BOUNDS.get(m.group("stage").strip())
+    x, y = int(m.group("x")), int(m.group("y"))
+    if not lo_hi or y == 0:
+        return None
+    lo, hi = lo_hi
+    return lo + (hi - lo) * min(x / y, 1.0)
+
+
+def run_job(job: Job, proxy_url: str) -> int:
+    """Run traduzir.py under a pty so babeldoc's rich progress bars render
+    (they carry per-stage counters we parse into job.progress). The log file
+    gets progress frames throttled to ~1/s; other lines are kept verbatim."""
+    cmd = [sys.executable, str(SCRIPT_DIR / "traduzir.py"), str(job.pdf_path),
+           "--backend", "local", "--base-url", proxy_url, "--out", str(job.out_dir)]
+    env = {**os.environ, "COLUMNS": "200", "LINES": "50", "TERM": "xterm-256color"}
+    master, slave = pty.openpty()
+    proc = subprocess.Popen(cmd, stdout=slave, stderr=slave, stdin=subprocess.DEVNULL,
+                            cwd=SCRIPT_DIR, env=env, close_fds=True)
+    os.close(slave)
+    buffer = ""
+    last_frame_write = 0.0
+    with open(job.log_path, "w", encoding="utf-8") as log:
+        while True:
+            ready, _, _ = select.select([master], [], [], 1.0)
+            if ready:
+                try:
+                    chunk = os.read(master, 65536)
+                except OSError:  # pty closed on child exit
+                    break
+                if not chunk:
+                    break
+                buffer += chunk.decode("utf-8", errors="replace")
+                *lines, buffer = re.split(r"[\r\n]+", buffer)
+                for raw in lines:
+                    line = ANSI_RE.sub("", raw).strip()
+                    if not line:
+                        continue
+                    pct = _stage_progress(line)
+                    if pct is not None:
+                        job.progress = max(job.progress or 0.0, pct)
+                        if time.time() - last_frame_write < 1.0:
+                            continue  # throttle: rich redraws many times/s
+                        last_frame_write = time.time()
+                    job._tail.append(line)
+                    log.write(line + "\n")
+            elif proc.poll() is not None:
+                break
+        log.flush()
+    os.close(master)
+    return proc.wait()
 
 
 def worker_loop() -> None:
@@ -229,16 +311,13 @@ def worker_loop() -> None:
             continue
         job = JOBS[job_id]
         job.status, job.started_at = "running", time.time()
-        cmd = [sys.executable, str(SCRIPT_DIR / "traduzir.py"), str(job.pdf_path),
-               "--backend", "local", "--base-url", proxy_url, "--out", str(job.out_dir)]
         try:
-            with open(job.log_path, "w", encoding="utf-8") as log:
-                result = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, cwd=SCRIPT_DIR)
-            if result.returncode == 0 and job.files():
-                job.status = "done"
+            returncode = run_job(job, proxy_url)
+            if returncode == 0 and job.files():
+                job.status, job.progress = "done", 100.0
             else:
                 job.status = "error"
-                job.error = f"traduzir.py saiu com código {result.returncode} (ver log)"
+                job.error = f"traduzir.py saiu com código {returncode} (ver log)"
         except Exception as exc:
             job.status, job.error = "error", str(exc)
         job.finished_at = time.time()
@@ -247,6 +326,8 @@ def worker_loop() -> None:
 # ---------------------------------------------------------------- app
 
 app = FastAPI(title="tradutor-artigos")
+
+app.mount("/favicon", StaticFiles(directory=SCRIPT_DIR / "favicon"), name="favicon")
 
 
 @app.get("/")
