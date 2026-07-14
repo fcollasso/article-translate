@@ -19,9 +19,9 @@ Wrapper CLI em Python sobre o `pdf2zh_next` (PDFMathTranslate 2.0 / BabelDOC) pa
 
 ## Ambiente do Felipe
 
-- MacBook M5 Pro: máquina principal de inferência local (LM Studio + MLX). Modelos: Qwen3 14B / Gemma 3 12B.
-- Desktop i9-10900F + RTX 3050 8GB + 64GB RAM: roda até 8B Q4 na VRAM; preferencialmente atua como cliente do MacBook via Tailscale.
-- Tailscale conecta as duas máquinas (LOCAL_BASE_URL pode apontar para o hostname da tailnet).
+- **Desktop i9-10900F + RTX 3050 8GB + 64GB RAM: máquina do projeto** (LM Studio + modelo até 8B Q4 na VRAM, ex.: Qwen3 8B GGUF).
+- MacBook M5 Pro (24 GB): **não usar para inferência local** — o Qwen3 14B consome a máquina inteira e a deixa inutilizável (decisão de 2026-07-14; todo o ambiente foi desinstalado do Mac).
+- Tailscale conecta as duas máquinas (o Mac pode consumir o servidor do desktop via LOCAL_BASE_URL, se um dia fizer sentido).
 
 ## Backlog / ideias futuras
 

@@ -62,17 +62,14 @@ Saída em `./output/`: `artigo.no_watermark.mono.pdf` (traduzido) e `.dual.pdf` 
 
 ### Modelos recomendados por máquina
 
-**MacBook M5 Pro (memória unificada — sua melhor máquina para isso):**
-- `Qwen3 14B` (MLX, 4-bit) — melhor equilíbrio para tradução técnica EN→PT-BR
-- `Gemma 3 12B` (MLX, 4-bit) — alternativa forte, muito bom em tradução
-- Se tiver 24 GB+ de RAM: teste `Gemma 3 27B` em 4-bit para qualidade superior
-- Prefira sempre builds **MLX** no LM Studio (mais rápidos em Apple Silicon)
-
-**Desktop RTX 3050 8 GB:**
+**Desktop RTX 3050 8 GB (máquina do projeto):**
 - `Qwen3 8B` (GGUF, Q4_K_M) — cabe inteiro na VRAM
 - `Gemma 3 4B` — se quiser velocidade máxima
 - Evite 12B+: vai transbordar para a RAM (os 64 GB ajudam, mas a velocidade despenca)
-- Dica: use este desktop como *cliente* apontando para o servidor do MacBook via Tailscale
+
+**MacBook M5 Pro (24 GB — não usar para inferência):**
+- Testado com `Qwen3 14B` MLX: a tradução funciona, mas consome a máquina inteira e a deixa inutilizável durante o processo
+- Se um dia precisar, o Mac pode ser *cliente* do desktop via Tailscale (`--base-url`)
 
 ### Dica de qualidade
 
