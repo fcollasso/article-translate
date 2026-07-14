@@ -1,0 +1,33 @@
+# Backend do traduzia.com.br no desktop (Docker Desktop + WSL2).
+#
+#   docker compose up -d --build
+#   docker compose exec traduzia python server.py token create felipe
+#
+# A porta 8010 fica exposta no Windows; a VPS chega nela pelo IP do
+# Tailscale do desktop (100.98.187.95:8010).
+services:
+  traduzia:
+    build: .
+    container_name: traduzia
+    restart: unless-stopped
+    ports:
+      - "8010:8010"
+    environment:
+      # dentro do container, o LM Studio (Windows) é host.docker.internal;
+      # env var tem precedência sobre o LOCAL_BASE_URL do .env
+      - LOCAL_BASE_URL=http://host.docker.internal:1234/v1
+    volumes:
+      - ./.env:/app/.env:ro
+      - ./uploads:/app/uploads
+      - ./output:/app/output
+      # SQLite em volume nomeado: WAL não é confiável em bind mount de
+      # drive Windows (DrvFs). Backup: docker cp traduzia:/app/data .
+      - traduzia-data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # métricas de GPU no dashboard (nvidia-smi dentro do container);
+    # se der erro no seu Docker, pode remover — o painel só perde os gráficos de GPU
+    gpus: all
+
+volumes:
+  traduzia-data:

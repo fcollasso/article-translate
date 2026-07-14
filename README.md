@@ -81,6 +81,32 @@ Em modelos Qwen3, desative o modo "thinking" para tradução (no LM Studio ou co
 2. Cole em `GEMINI_API_KEY` no `.env`
 3. Mantenha `GEMINI_QPS=1` no free tier (evita erro 429). Um artigo de ~16 páginas consome bastante requisições; o free tier diário dá conta de poucos artigos/dia — para volume, o tier pago custa centavos por artigo.
 
+## Web — traduzia.com.br
+
+Frontend web com login por token, fila de jobs, progresso e métricas ao vivo:
+
+```
+navegador → traduzia.com.br → nginx na VPS (TLS, bloqueia /llmproxy)
+                                  ↓ Tailscale
+                          desktop: Docker [server.py + SQLite]
+                                  ↓ host.docker.internal
+                          LM Studio (RTX 3050) — inferência
+
+downloads: navegador → Cloudflare R2 (URL pré-assinada, sem passar pelo túnel)
+```
+
+No desktop:
+
+```bash
+docker compose up -d --build
+docker compose exec traduzia python server.py token create felipe   # imprime o token 1x
+```
+
+- Tokens e jobs ficam em SQLite (volume `traduzia-data`); gerencie com `token list` / `token revoke <nome>`.
+- R2 é opcional: preencha `R2_*` no `.env` (seção no `.env.example`); sem ele os arquivos são servidos do desktop com URL assinada.
+- O vhost do nginx da VPS está versionado em `deploy/nginx/traduzia.conf`; o passo a passo do deploy está no `ESTADO.md`.
+- Sem Docker (`.venv/bin/python server.py`) também funciona, mas exige `pip install boto3`, `FRONTEND_HOST=0.0.0.0` e portproxy do Windows→WSL — o Docker Desktop publica a porta no Windows sozinho.
+
 ## Solução de problemas
 
 - **Erro 429 (Gemini):** reduza `GEMINI_QPS` ou aguarde a janela de rate limit.

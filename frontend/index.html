@@ -379,6 +379,51 @@
   }
 
   /* ============================================================
+     Login (token de acesso)
+     ============================================================ */
+  #login-overlay {
+    position: fixed; inset: 0; z-index: 50;
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+    background: var(--bg);
+  }
+  .login-card {
+    width: 100%; max-width: 380px;
+    display: flex; flex-direction: column; gap: 16px;
+    padding: 28px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+  }
+  .login-card .wordmark { font-size: 22px; }
+  .login-sub { margin: -6px 0 0; font-size: 13px; color: var(--text-2); }
+  #token-input {
+    padding: 11px 14px;
+    border: 1px solid var(--border-strong);
+    border-radius: 10px;
+    background: var(--surface-2);
+    color: var(--text);
+    font-family: var(--mono); font-size: 13px;
+    outline: none;
+    transition: border-color .15s;
+  }
+  #token-input:focus { border-color: var(--accent); }
+  #login-btn {
+    padding: 11px 14px;
+    border: none; border-radius: 10px;
+    background: var(--accent);
+    color: oklch(0.145 0.008 255);
+    font-size: 13.5px; font-weight: 600;
+    cursor: pointer;
+    transition: filter .15s;
+  }
+  body[data-theme="light"] #login-btn { color: white; }
+  #login-btn:hover { filter: brightness(1.08); }
+  #login-btn:disabled { opacity: .6; cursor: default; }
+  #login-err { margin: 0; min-height: 16px; font-size: 12.5px; color: var(--red); }
+
+  /* ============================================================
      Footer
      ============================================================ */
   footer { margin-top: 12px; display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; color: var(--text-3); }
@@ -392,6 +437,17 @@
     if (localStorage.getItem("traduzai.theme") === "light") document.body.dataset.theme = "light";
   } catch (e) { /* localStorage indisponível */ }
 </script>
+
+<div id="login-overlay" hidden>
+  <form class="login-card" id="login-form">
+    <div class="wordmark"><span>traduz</span><span class="ai">ai</span><span class="dot">.</span></div>
+    <p class="login-sub">Cole seu token de acesso para entrar.</p>
+    <input id="token-input" type="password" placeholder="token de acesso"
+           autocomplete="current-password" spellcheck="false" aria-label="Token de acesso">
+    <button id="login-btn" type="submit">Entrar</button>
+    <p id="login-err" role="alert"></p>
+  </form>
+</div>
 
 <div class="page">
   <div class="container">
@@ -413,6 +469,7 @@
           <span class="theme-icon"></span>
           <span id="theme-label">claro</span>
         </button>
+        <button class="pill" id="logout-btn" type="button" hidden>sair</button>
       </div>
     </header>
 
@@ -582,6 +639,9 @@ $("theme-label").textContent = document.body.dataset.theme === "light" ? "escuro
 /* ==============================================================
    Estado
    ============================================================== */
+let TOKEN = "";
+try { TOKEN = localStorage.getItem("traduzai.token") || ""; } catch (e) { /* ok */ }
+
 const state = {
   backendDown: null, // null = ainda sem contato; força o primeiro update do pill
   jobs: [],
@@ -603,8 +663,10 @@ function setBackendDown(down) {
   $("metrics-section").classList.toggle("stale", down);
 }
 
-async function fetchJSON(url, opts) {
-  const r = await fetch(url, opts);
+async function fetchJSON(url, opts = {}) {
+  const headers = { ...(opts.headers || {}) };
+  if (TOKEN) headers["Authorization"] = "Bearer " + TOKEN;
+  const r = await fetch(url, { ...opts, headers });
   let body = null;
   try { body = await r.json(); } catch { /* corpo não-JSON */ }
   if (!r.ok) {
@@ -631,6 +693,7 @@ async function pollMetrics() {
     setBackendDown(false);
     renderMetrics(m);
   } catch (e) {
+    if (e.httpStatus === 401) { requireLogin("token inválido ou expirado — cole o token de novo."); return; }
     if (e.httpStatus === undefined) setBackendDown(true); // falha de rede
   }
   state.metricsTimer = setTimeout(pollMetrics, 2000);
@@ -645,6 +708,7 @@ async function pollJobs() {
     state.jobs = Array.isArray(data.jobs) ? data.jobs : [];
     renderJobs(state.jobs);
   } catch (e) {
+    if (e.httpStatus === 401) { requireLogin("token inválido ou expirado — cole o token de novo."); return; }
     if (e.httpStatus === undefined) setBackendDown(true);
   }
   state.jobsTimer = setTimeout(pollJobs, hasActiveJobs() ? 2000 : 10000);
@@ -654,7 +718,7 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
     clearTimeout(state.metricsTimer);
     clearTimeout(state.jobsTimer);
-  } else {
+  } else if (TOKEN) {
     pollMetrics();
     pollJobs();
   }
@@ -690,6 +754,7 @@ async function uploadFile(file) {
     setMetricsOpen(true); // handoff: abre métricas ao iniciar um job
     pollJobs(); // atualiza a lista imediatamente
   } catch (e) {
+    if (e.httpStatus === 401) { requireLogin("token inválido ou expirado — cole o token de novo."); return; }
     const msg = e.httpStatus === undefined
       ? "backend indisponível — não foi possível enviar o arquivo."
       : e.message;
@@ -845,9 +910,10 @@ function updateJobEl(entry, job) {
     entry.lastLog = logText;
   }
 
-  // downloads (job concluído)
+  // downloads (job concluído) — as URLs são assinadas e mudam a cada poll,
+  // então a assinatura do DOM usa nome+tamanho e só o href é re-apontado
   const filesArr = Array.isArray(job.files) ? job.files : [];
-  const sig = filesArr.map((f) => f.url).join("|");
+  const sig = filesArr.map((f) => f.name + ":" + f.size).join("|");
   if (job.status === "done" && filesArr.length) {
     if (entry.filesSig !== sig) {
       refs.files.innerHTML = "";
@@ -864,6 +930,9 @@ function updateJobEl(entry, job) {
         refs.files.append(a);
       }
       entry.filesSig = sig;
+    } else {
+      const links = refs.files.querySelectorAll("a.dl");
+      filesArr.forEach((f, i) => { if (links[i]) links[i].href = f.url; });
     }
     refs.files.hidden = false;
   } else {
@@ -1069,10 +1138,57 @@ function renderMetrics(m) {
 }
 
 /* ==============================================================
+   Autenticação — token de acesso guardado em localStorage
+   ============================================================== */
+function requireLogin(msg) {
+  TOKEN = "";
+  try { localStorage.removeItem("traduzai.token"); } catch (e) { /* ok */ }
+  clearTimeout(state.metricsTimer);
+  clearTimeout(state.jobsTimer);
+  $("logout-btn").hidden = true;
+  $("login-err").textContent = msg || "";
+  $("login-overlay").hidden = false;
+  $("token-input").focus();
+}
+
+function enterApp() {
+  $("login-overlay").hidden = true;
+  $("logout-btn").hidden = false;
+  pollMetrics();
+  pollJobs();
+}
+
+$("login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const value = $("token-input").value.trim();
+  if (!value) return;
+  const btn = $("login-btn");
+  btn.disabled = true;
+  $("login-err").textContent = "";
+  try {
+    const r = await fetch("/api/auth/check", { headers: { Authorization: "Bearer " + value } });
+    if (r.ok) {
+      TOKEN = value;
+      try { localStorage.setItem("traduzai.token", value); } catch (err) { /* ok */ }
+      $("token-input").value = "";
+      enterApp();
+    } else {
+      const body = await r.json().catch(() => null);
+      $("login-err").textContent = body && body.detail ? body.detail : "token inválido";
+    }
+  } catch (err) {
+    $("login-err").textContent = "backend indisponível — tente de novo em instantes.";
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$("logout-btn").addEventListener("click", () => requireLogin());
+
+/* ==============================================================
    Início
    ============================================================== */
-pollMetrics();
-pollJobs();
+if (TOKEN) enterApp(); else requireLogin();
 </script>
 </body>
 </html>

@@ -1,6 +1,68 @@
 # ESTADO.md — tradutor-artigos
 
-## Sessão atual: 2026-07-14 (tarde — projeto migra para o desktop)
+## Sessão atual: 2026-07-14 (noite — publicação em traduzia.com.br)
+
+### Decisão
+Felipe comprou **traduzia.com.br** (Hostinger) e o app vai para a web: o nginx da VPS
+de projetos (187.77.195.108, o mesmo do quark/luppai) faz TLS e proxy via Tailscale até
+o backend no desktop. Autenticação = token de acesso (estilo API key) com tela de login;
+storage dos PDFs no Cloudflare R2 (free tier); **SQLite** (não Postgres) para tokens + jobs.
+
+### Feito (código — no Mac, testado com venv 3.12 descartável)
+- `server.py`: auth por Bearer token (SHA-256 em SQLite, comparação constant-time, CLI
+  `python server.py token create|list|revoke`), jobs persistidos em SQLite (`data/traduzai.db`,
+  WAL; no restart, 'running' vira erro "interrompido" e 'queued' retoma sozinho), saídas sobem
+  pro R2 (boto3, import tardio) com download por URL pré-assinada direto da Cloudflare, fallback
+  local com URL assinada HMAC de 1h (links `<a>` não mandam header Authorization), `/llmproxy`
+  restrito a localhost, bind configurável via `FRONTEND_HOST`. O progresso via pty do desktop
+  foi preservado intacto (agora em `RunState`, memória)
+- `frontend/index.html`: tela de login (token em localStorage `traduzai.token`), Authorization
+  em todo fetch, 401 → volta pro login, botão "sair", downloads re-apontam o href a cada poll
+  (URLs assinadas expiram). Design system intocado
+- `Dockerfile` + `docker-compose.yml` (desktop): python:3.12-slim + pdf2zh-next 2.9.0 + boto3,
+  warmup do babeldoc na build da imagem, `gpus: all` só p/ métricas (inferência continua no LM
+  Studio do Windows via `host.docker.internal`), DB em volume nomeado (WAL não é confiável em
+  bind mount DrvFs), uploads/output em bind mount normal
+- `deploy/nginx/traduzia.conf` (vhost definitivo) + `traduzia.http-only.conf` (bootstrap ACME)
+- Testes que passaram: 401 sem token / token errado, login/check, upload+fila+worker (erro
+  esperado sem pdf2zh no Mac, com log), download assinado sem auth + tamper/expiração → 403,
+  revoke → 401 imediato, recovery pós-restart, sintaxe JS via node --check
+
+### Feito (VPS + DNS — https://traduzia.com.br já responde)
+- DNS na Hostinger apontado p/ `187.77.195.108` (feito pelo Felipe durante a sessão)
+- Certificado Let's Encrypt emitido (traduzia.com.br + www, expira 2026-10-12; renovação =
+  mesmo esquema dos outros domínios da VPS)
+- Vhost definitivo ativo em `/root/quark/nginx/conf.d/traduzia.conf` (cópia versionada em
+  `deploy/nginx/traduzia.conf`): TLS ok, HTTP→HTTPS 301 ok, `/llmproxy` → 403 ok.
+  **A raiz dá 504 até o desktop conectar** (esperado: falta Tailscale + backend)
+- Tailscale 1.98.8 instalado — **pendente autorização do Felipe** (link nas pendências)
+- Regra MASQUERADE docker→tailnet + unit systemd `tailscale-docker-masq` (persistente)
+
+### Pendências (nesta ordem)
+1. **Commit/push deste repo** (as mudanças estão no Mac, não comitadas)
+2. **Tailscale**: autorizar a VPS no tailnet: https://login.tailscale.com/a/1b00baa401f9a2
+   (depois, no admin do Tailscale, desativar key expiry da VPS)
+3. **Desktop**: `git pull`; instalar Docker Desktop (WSL2) se não tiver; preencher R2_* no `.env`
+   (bucket `traduzia` criado no painel Cloudflare > R2 — opcional, funciona sem); 
+   `docker compose up -d --build`;
+   `docker compose exec traduzia python server.py token create felipe`; se der timeout de fora,
+   liberar a porta 8010 no firewall do Windows
+4. Teste e2e: https://traduzia.com.br → login → traduzir um paper → conferir download saindo do R2
+
+### Comandos de referência
+```bash
+# validar a rota VPS→desktop (depois do Tailscale autorizado e do compose up no desktop):
+curl -s http://100.98.187.95:8010/ | head -c 100                              # do host da VPS
+docker exec quark-nginx wget -qO- http://100.98.187.95:8010/ | head -c 100    # do container
+```
+
+### Notas
+- A marca na UI segue "**traduzai.**" (nome do design system); o domínio é tradu**zia**.com.br —
+  decidir se rebatiza a UI ou se fica assim
+- Sem R2 configurado tudo continua funcionando: os downloads saem do próprio desktop
+- Renovação do certificado: mesmo esquema dos outros domínios da VPS
+
+## Sessão 2026-07-14 (tarde — projeto migra para o desktop)
 
 ### Decisão
 Rodar inferência local no MacBook (24 GB) se mostrou inviável: o Qwen3 14B consome

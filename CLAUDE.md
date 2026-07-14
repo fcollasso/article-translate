@@ -6,8 +6,9 @@ Wrapper CLI em Python sobre o `pdf2zh_next` (PDFMathTranslate 2.0 / BabelDOC) pa
 
 ## Arquitetura
 
-- `traduzir.py` — único ponto de entrada. Sem dependências externas (só stdlib). Monta e executa comandos `pdf2zh_next`.
-- `.env` — configuração (backend padrão, modelos, keys). Nunca comitar.
+- `traduzir.py` — CLI e núcleo. Sem dependências externas (só stdlib). Monta e executa comandos `pdf2zh_next`.
+- `server.py` + `frontend/index.html` — frontend web (FastAPI): fila de jobs, progresso via pty, métricas, auth por token de acesso, jobs/tokens em SQLite (`data/`), saídas no Cloudflare R2 (opcional). Publicado em https://traduzia.com.br: nginx da VPS de projetos (187.77.195.108) → Tailscale → Docker no desktop. Confs de deploy em `deploy/`.
+- `.env` — configuração (backend padrão, modelos, keys, R2). Nunca comitar.
 - `output/` — PDFs gerados (`.mono.pdf` traduzido, `.dual.pdf` bilíngue).
 - O trabalho pesado (layout detection, chunking, reconstrução do PDF) é todo do pdf2zh_next/BabelDOC — **não reimplementar nada disso aqui**.
 

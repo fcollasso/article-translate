@@ -4,3 +4,4 @@ artigos/
 __pycache__/
 .venv/
 uploads/
+data/
