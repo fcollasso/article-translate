@@ -1,0 +1,366 @@
+#!/usr/bin/env python3
+"""
+server.py — Web frontend for traduzir.py with live LM Studio / GPU metrics.
+
+Run:
+  .venv/bin/python server.py          # http://localhost:8010
+
+How metrics work:
+  Translation jobs run traduzir.py with --base-url pointed at this server's
+  /llmproxy/v1, which forwards every request to the real LM Studio server
+  (LOCAL_BASE_URL from .env) while recording token usage and timing.
+  GPU stats come from nvidia-smi; model info from LM Studio's native
+  /api/v0/models endpoint.
+"""
+
+import asyncio
+import re
+import shutil
+import subprocess
+import sys
+import threading
+import time
+import uuid
+from collections import deque
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import httpx
+import uvicorn
+from fastapi import FastAPI, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, Response
+
+from traduzir import load_env
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+ENV = load_env(SCRIPT_DIR / ".env")
+
+LOCAL_BASE_URL = ENV.get("LOCAL_BASE_URL", "http://localhost:1234/v1").rstrip("/")
+LMSTUDIO_ROOT = LOCAL_BASE_URL.removesuffix("/v1")
+PORT = int(ENV.get("FRONTEND_PORT", "8010"))
+
+UPLOADS_DIR = SCRIPT_DIR / "uploads"
+OUTPUT_DIR = SCRIPT_DIR / "output" / "web"
+FRONTEND_FILE = SCRIPT_DIR / "frontend" / "index.html"
+
+MAX_UPLOAD_BYTES = 200 * 1024 * 1024
+HISTORY_MAX = 150
+SAMPLE_INTERVAL = 2.0  # seconds between metric samples
+
+ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]|\x1b\].*?(?:\x07|\x1b\\)")
+
+FILE_LABELS = [
+    (".mono.pdf", "PDF traduzido (mono)"),
+    (".dual.pdf", "PDF bilíngue (dual)"),
+    (".glossary.csv", "Glossário (CSV)"),
+]
+
+
+# ---------------------------------------------------------------- LLM stats
+
+class LlmStats:
+    """Aggregates usage recorded by the /llmproxy passthrough."""
+
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.requests_total = 0
+        self.requests_active = 0
+        self.prompt_tokens_total = 0
+        self.completion_tokens_total = 0
+        self.tok_s_last: float | None = None
+        self._tok_s_samples: list[float] = []
+        # (timestamp, completion_tokens) of recently finished requests,
+        # used to compute instantaneous throughput for the history chart
+        self._recent: deque[tuple[float, int]] = deque(maxlen=512)
+
+    def start_request(self) -> None:
+        with self.lock:
+            self.requests_active += 1
+
+    def end_request(self, usage: dict | None, duration: float) -> None:
+        with self.lock:
+            self.requests_active -= 1
+            self.requests_total += 1
+            if not usage:
+                return
+            prompt = int(usage.get("prompt_tokens") or 0)
+            completion = int(usage.get("completion_tokens") or 0)
+            self.prompt_tokens_total += prompt
+            self.completion_tokens_total += completion
+            self._recent.append((time.time(), completion))
+            if completion and duration > 0:
+                self.tok_s_last = completion / duration
+                self._tok_s_samples.append(self.tok_s_last)
+
+    def throughput(self, window: float = 6.0) -> float | None:
+        """Completion tokens/s over the last `window` seconds (all requests combined)."""
+        now = time.time()
+        with self.lock:
+            tokens = sum(n for t, n in self._recent if now - t <= window)
+            active = self.requests_active
+        if tokens == 0 and active == 0:
+            return None
+        return round(tokens / window, 1)
+
+    def snapshot(self) -> dict:
+        with self.lock:
+            avg = (sum(self._tok_s_samples) / len(self._tok_s_samples)) if self._tok_s_samples else None
+            return {
+                "requests_total": self.requests_total,
+                "requests_active": self.requests_active,
+                "prompt_tokens_total": self.prompt_tokens_total,
+                "completion_tokens_total": self.completion_tokens_total,
+                "tok_s_last": round(self.tok_s_last, 1) if self.tok_s_last else None,
+                "tok_s_avg": round(avg, 1) if avg else None,
+            }
+
+
+STATS = LlmStats()
+HISTORY: deque[dict] = deque(maxlen=HISTORY_MAX)
+
+
+# ---------------------------------------------------------------- GPU / model info
+
+NVIDIA_SMI = shutil.which("nvidia-smi") or "/usr/lib/wsl/lib/nvidia-smi"
+
+
+def read_gpu() -> dict | None:
+    try:
+        out = subprocess.run(
+            [NVIDIA_SMI, "--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu",
+             "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=5,
+        )
+        util, used, total, temp = [v.strip() for v in out.stdout.strip().splitlines()[0].split(",")]
+        return {"util_pct": int(util), "vram_used_mib": int(used),
+                "vram_total_mib": int(total), "temp_c": int(temp)}
+    except Exception:
+        return None
+
+
+def read_model() -> dict | None:
+    try:
+        r = httpx.get(f"{LMSTUDIO_ROOT}/api/v0/models", timeout=3)
+        for m in r.json().get("data", []):
+            if m.get("type") == "llm" and m.get("state") == "loaded":
+                return {k: m.get(k) for k in
+                        ("id", "state", "quantization", "loaded_context_length", "max_context_length")}
+        return None
+    except Exception:
+        return None
+
+
+def sampler_loop() -> None:
+    while True:
+        gpu = read_gpu()
+        sample = {
+            "t": time.time(),
+            "tok_s": STATS.throughput(),
+            "gpu_util": gpu["util_pct"] if gpu else None,
+            "vram_used_mib": gpu["vram_used_mib"] if gpu else None,
+            "temp_c": gpu["temp_c"] if gpu else None,
+        }
+        HISTORY.append(sample)
+        time.sleep(SAMPLE_INTERVAL)
+
+
+# ---------------------------------------------------------------- jobs
+
+@dataclass
+class Job:
+    id: str
+    filename: str
+    pdf_path: Path
+    out_dir: Path
+    status: str = "queued"  # queued | running | done | error
+    created_at: float = field(default_factory=time.time)
+    started_at: float | None = None
+    finished_at: float | None = None
+    error: str | None = None
+
+    @property
+    def log_path(self) -> Path:
+        return self.out_dir / "run.log"
+
+    def log_tail(self, max_chars: int = 4000) -> str:
+        try:
+            text = self.log_path.read_text(encoding="utf-8", errors="replace")[-max_chars:]
+            text = ANSI_RE.sub("", text).replace("\r", "\n")
+            return "\n".join(line for line in text.splitlines() if line.strip())[-max_chars:]
+        except OSError:
+            return ""
+
+    def files(self) -> list[dict]:
+        found = []
+        if not self.out_dir.exists():
+            return found
+        for f in sorted(self.out_dir.iterdir()):
+            for suffix, label in FILE_LABELS:
+                if f.name.endswith(suffix):
+                    found.append({"label": label, "name": f.name,
+                                  "url": f"/api/jobs/{self.id}/files/{f.name}",
+                                  "size": f.stat().st_size})
+        return found
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id, "filename": self.filename, "status": self.status,
+            "created_at": self.created_at, "started_at": self.started_at,
+            "finished_at": self.finished_at, "error": self.error,
+            "log_tail": self.log_tail() if self.status in ("running", "error") else "",
+            "files": self.files() if self.status == "done" else [],
+        }
+
+
+JOBS: dict[str, Job] = {}
+JOB_ORDER: list[str] = []  # most recent first
+JOB_QUEUE: deque[str] = deque()
+JOBS_LOCK = threading.Lock()
+
+
+def worker_loop() -> None:
+    """Runs one translation at a time — the GPU can't take two papers at once."""
+    proxy_url = f"http://127.0.0.1:{PORT}/llmproxy/v1"
+    while True:
+        with JOBS_LOCK:
+            job_id = JOB_QUEUE.popleft() if JOB_QUEUE else None
+        if job_id is None:
+            time.sleep(0.5)
+            continue
+        job = JOBS[job_id]
+        job.status, job.started_at = "running", time.time()
+        cmd = [sys.executable, str(SCRIPT_DIR / "traduzir.py"), str(job.pdf_path),
+               "--backend", "local", "--base-url", proxy_url, "--out", str(job.out_dir)]
+        try:
+            with open(job.log_path, "w", encoding="utf-8") as log:
+                result = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, cwd=SCRIPT_DIR)
+            if result.returncode == 0 and job.files():
+                job.status = "done"
+            else:
+                job.status = "error"
+                job.error = f"traduzir.py saiu com código {result.returncode} (ver log)"
+        except Exception as exc:
+            job.status, job.error = "error", str(exc)
+        job.finished_at = time.time()
+
+
+# ---------------------------------------------------------------- app
+
+app = FastAPI(title="tradutor-artigos")
+
+
+@app.get("/")
+def index() -> FileResponse:
+    return FileResponse(FRONTEND_FILE, media_type="text/html")
+
+
+@app.post("/api/jobs", status_code=201)
+async def create_job(file: UploadFile) -> dict:
+    name = Path(file.filename or "").name
+    if not name.lower().endswith(".pdf"):
+        raise HTTPException(400, detail="Envie um arquivo .pdf")
+    data = await file.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(400, detail="Arquivo maior que 200 MB")
+    if not data.startswith(b"%PDF"):
+        raise HTTPException(400, detail="O arquivo não parece ser um PDF válido")
+
+    job_id = uuid.uuid4().hex[:12]
+    job_dir = UPLOADS_DIR / job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    pdf_path = job_dir / name
+    pdf_path.write_bytes(data)
+
+    job = Job(id=job_id, filename=name, pdf_path=pdf_path, out_dir=OUTPUT_DIR / job_id)
+    job.out_dir.mkdir(parents=True, exist_ok=True)
+    with JOBS_LOCK:
+        JOBS[job_id] = job
+        JOB_ORDER.insert(0, job_id)
+        JOB_QUEUE.append(job_id)
+    return {"id": job_id, "filename": name}
+
+
+@app.get("/api/jobs")
+def list_jobs() -> dict:
+    with JOBS_LOCK:
+        return {"jobs": [JOBS[jid].to_dict() for jid in JOB_ORDER]}
+
+
+@app.get("/api/jobs/{job_id}")
+def get_job(job_id: str) -> dict:
+    job = JOBS.get(job_id)
+    if not job:
+        raise HTTPException(404, detail="Job não encontrado")
+    return job.to_dict()
+
+
+@app.get("/api/jobs/{job_id}/files/{name}")
+def download(job_id: str, name: str) -> FileResponse:
+    job = JOBS.get(job_id)
+    if not job:
+        raise HTTPException(404, detail="Job não encontrado")
+    path = (job.out_dir / Path(name).name).resolve()
+    if not path.is_file() or job.out_dir.resolve() not in path.parents:
+        raise HTTPException(404, detail="Arquivo não encontrado")
+    return FileResponse(path, filename=path.name)
+
+
+@app.get("/api/metrics")
+def metrics() -> dict:
+    return {
+        "model": read_model(),
+        "llm": STATS.snapshot(),
+        "gpu": read_gpu(),
+        "history": list(HISTORY),
+    }
+
+
+# ---------------------------------------------------------------- LLM proxy
+
+PROXY_CLIENT = httpx.AsyncClient(timeout=httpx.Timeout(600.0, connect=10.0))
+HOP_HEADERS = {"host", "content-length", "connection", "keep-alive", "transfer-encoding"}
+
+
+@app.api_route("/llmproxy/v1/{path:path}", methods=["GET", "POST"])
+async def llm_proxy(path: str, request: Request) -> Response:
+    url = f"{LOCAL_BASE_URL}/{path}"
+    headers = {k: v for k, v in request.headers.items() if k.lower() not in HOP_HEADERS}
+    body = await request.body()
+    is_completion = request.method == "POST" and path.rstrip("/").endswith("completions")
+
+    if is_completion:
+        STATS.start_request()
+    start = time.monotonic()
+    usage = None
+    try:
+        upstream = await PROXY_CLIENT.request(request.method, url, headers=headers, content=body)
+        if is_completion and upstream.headers.get("content-type", "").startswith("application/json"):
+            try:
+                usage = upstream.json().get("usage")
+            except ValueError:
+                pass
+        return Response(
+            content=upstream.content,
+            status_code=upstream.status_code,
+            headers={k: v for k, v in upstream.headers.items() if k.lower() not in HOP_HEADERS},
+        )
+    except httpx.HTTPError as exc:
+        return JSONResponse({"error": f"proxy: {exc}"}, status_code=502)
+    finally:
+        if is_completion:
+            STATS.end_request(usage, time.monotonic() - start)
+
+
+def main() -> None:
+    if not FRONTEND_FILE.exists():
+        sys.exit(f"[erro] Frontend não encontrado: {FRONTEND_FILE}")
+    UPLOADS_DIR.mkdir(exist_ok=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    threading.Thread(target=sampler_loop, daemon=True).start()
+    threading.Thread(target=worker_loop, daemon=True).start()
+    print(f"Tradutor de Artigos: http://localhost:{PORT}  (LM Studio: {LOCAL_BASE_URL})")
+    uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="warning")
+
+
+if __name__ == "__main__":
+    main()

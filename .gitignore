@@ -2,3 +2,5 @@
 output/
 artigos/
 __pycache__/
+.venv/
+uploads/

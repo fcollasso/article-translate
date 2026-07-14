@@ -26,6 +26,12 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 
 
+def find_pdf2zh() -> str:
+    """Prefer the pdf2zh_next installed alongside the running Python (venv), else rely on PATH."""
+    candidate = Path(sys.executable).parent / "pdf2zh_next"
+    return str(candidate) if candidate.exists() else "pdf2zh_next"
+
+
 def load_env(path: Path) -> dict:
     """Minimal .env parser (no external dependencies)."""
     env = {}
@@ -56,7 +62,7 @@ def collect_pdfs(inputs: list[str]) -> list[Path]:
 
 def build_command(pdf: Path, args: argparse.Namespace, env: dict) -> list[str]:
     cmd = [
-        "pdf2zh_next",
+        find_pdf2zh(),
         str(pdf),
         "--lang-in", args.lang_in,
         "--lang-out", args.lang_out,
