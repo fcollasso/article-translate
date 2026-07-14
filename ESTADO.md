@@ -10,7 +10,18 @@
 - Fix no `traduzir.py`: `OUTPUT_DIR` relativo vindo do `.env` agora é ancorado na pasta do projeto (antes resolvia contra o CWD de quem chamava)
 - Repo git já existia com commit inicial (veio do bootstrap); `.env` confirmado como ignorado
 - Paper de teste baixado: `artigos/2511.15247.pdf` (6 págs, PINNs) — pasta `artigos/` adicionada ao `.gitignore`
-- `pdf2zh_next --warmup` rodado para pré-baixar o modelo de layout (DocLayout-YOLO)
+- `pdf2zh_next --warmup` rodado para pré-baixar o modelo de layout (DocLayout-YOLO) — cache ok em `~/.cache/babeldoc` (337 MB). Obs: `--warmup` termina com AssertionError inofensivo ("At least one input file is required") depois de baixar tudo — bug cosmético da CLI 2.9.0
+- LM Studio instalado via `brew install --cask lm-studio`; CLI `lms` em `~/.lmstudio/bin/lms`
+- Qwen3 14B MLX baixado (8,3 GB): id exato `qwen/qwen3-14b` — `.env` atualizado com esse id
+- Sanity test da API: tradução correta, mas thinking do Qwen3 gastou 322 tokens de raciocínio vs 36 de resposta → adicionado no traduzir.py: `/no_think` via `--custom-system-prompt` quando o modelo local é Qwen (replica o role block padrão do babeldoc, ver `_build_role_block` em il_translator.py)
+- Teste real do paper foi iniciado mas **interrompido por reboot do Mac** — `output/` está vazia, precisa rodar de novo
+
+### Como retomar o teste interrompido
+```bash
+~/.lmstudio/bin/lms server start
+~/.lmstudio/bin/lms load qwen/qwen3-14b -c 8192 --parallel 2 -y
+python3 traduzir.py artigos/2511.15247.pdf
+```
 
 ## Sessão anterior: 2026-07-14 (bootstrap via Claude.ai)
 - Pesquisa: decidido usar pdf2zh-next (PDFMathTranslate 2.0) como motor, em vez de implementar extração/reconstrução de PDF do zero

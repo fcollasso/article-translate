@@ -80,6 +80,14 @@ def build_command(pdf: Path, args: argparse.Namespace, env: dict) -> list[str]:
             "--qps", str(args.qps or env.get("LOCAL_QPS", "4")),
             "--pool-max-workers", str(env.get("LOCAL_WORKERS", "4")),
         ]
+        if "qwen" in model.lower():
+            # Qwen3 thinking mode wastes ~10x tokens on translation; /no_think disables it.
+            # Mirrors babeldoc's default role block ("Follow all rules strictly." is re-appended by it).
+            cmd += [
+                "--custom-system-prompt",
+                f"/no_think You are a professional {args.lang_out} native translator "
+                f"who needs to fluently translate text into {args.lang_out}.",
+            ]
     elif args.backend == "gemini":
         api_key = env.get("GEMINI_API_KEY", "")
         if not api_key:
