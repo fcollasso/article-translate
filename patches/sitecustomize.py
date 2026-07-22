@@ -25,9 +25,13 @@ import os
 
 logger = logging.getLogger("traduzia.justify")
 
-# Nunca esticar um espaço além de _MAX_STRETCH x a largura mediana dos espaços
-# da linha: linha que quebrou cedo demais (ex.: fórmula larga) fica à esquerda.
-_MAX_STRETCH = 2.0
+# Teto de estiramento por espaço: o maior entre 1 em (fonte mediana da linha) e
+# 2x a mediana dos espaços. Linha que precisa de mais que isso quebrou cedo
+# demais (ex.: fórmula larga) e fica à esquerda. Calibrado no 2601.13956v1 em
+# pt-BR: sobras reais de linha chegam a ~0.9 em por espaço (palavras longas sem
+# hifenização); o teto em "2x espaço" usado antes justificava só 2/3 das linhas.
+_MAX_STRETCH_EM = 1.0
+_MAX_STRETCH_GAP = 2.0
 _EPS = 0.05  # tolerância em pt para "linha já encosta na margem"
 
 
@@ -90,6 +94,22 @@ def _split_lines(units):
     return lines
 
 
+def _line_em(line):
+    """Tamanho de fonte mediano das unidades de texto da linha (em pt), ou None."""
+    sizes = []
+    for u in line:
+        if u.char is not None:
+            style = getattr(u.char, "pdf_style", None)
+            if style is not None and getattr(style, "font_size", None):
+                sizes.append(style.font_size)
+        elif u.unicode is not None and getattr(u, "font_size", None):
+            sizes.append(u.font_size)
+    if not sizes:
+        return None
+    sizes.sort()
+    return sizes[len(sizes) // 2]
+
+
 def _justify_line(line, box):
     content = [u for u in line if not u.is_space]
     if len(content) < 2:
@@ -104,8 +124,14 @@ def _justify_line(line, box):
         return
     widths = sorted(u.box.x2 - u.box.x for u in gaps)
     median_gap = widths[len(widths) // 2]
+    if median_gap <= 0:
+        return
+    em = _line_em(line)
+    cap = _MAX_STRETCH_GAP * median_gap
+    if em:
+        cap = max(cap, _MAX_STRETCH_EM * em)
     extra = leftover / len(gaps)
-    if median_gap <= 0 or extra > _MAX_STRETCH * median_gap:
+    if extra > cap:
         return
     shift = 0.0
     gap_ids = {id(u) for u in gaps}

@@ -33,11 +33,26 @@
   não reimplementar) atualizados.
 - `from __future__ import annotations` no traduzir.py (python3 default do Mac é 3.9).
 
+### Recalibração pós-teste real no desktop (mesmo dia, mais tarde)
+- Felipe traduziu o 2601.13956v1 no desktop com o patch: **67% das linhas de corpo saíram
+  justificadas** (medido com pymupdf), mas o restante caiu no teto de estiramento — que foi
+  calibrado no teste em inglês, onde as sobras de linha são pequenas. Em pt-BR (palavras
+  longas, sem hifenização) as sobras chegam a p95=54pt com fonte 8pt.
+- Novo teto: max(1 em da fonte mediana da linha, 2x a mediana dos espaços). Fonte lida de
+  `char.pdf_style.font_size` / `unit.font_size` com fallback para a regra antiga. Teste de
+  unidade novo (nº 8) + e2e refeito: parágrafos de corpo justificam quase por completo;
+  linhas com palavras coladas (poucos espaços) continuam à esquerda por design.
+- Partes não traduzidas no PDF do desktop (título, autores, abstract em inglês): **não é o
+  patch** — são os blocos mais densos em placeholders de estilo (negrito, sobrescritos) e o
+  qwen3-8b falha neles de forma não determinística; o BabelDOC mantém o original (que fica
+  passthrough, perfeitamente justificado). Ontem os mesmos blocos saíram traduzidos porém
+  com palavras coladas. Mitigações: rodar de novo (cache reaproveita os chunks bons),
+  `--no-rich-text` (derruba os placeholders) ou `--backend gemini`.
+
 ### Pendências
-- Desktop: `git pull` + `docker compose up -d --build` (a imagem precisa do `patches/`) e
-  retraduzir o 2601.13956v1 com o modelo real para ver a justificação em pt-BR de verdade.
-- Avaliar `--no-rich-text` no mesmo artigo (palavras coladas) e o benchmark local vs
-  `--backend gemini` (chunks falhados, ex.: 1º parágrafo da introdução em inglês).
+- Desktop: `git pull` (+ rebuild do Docker se for usar o site) e retraduzir o 2601.13956v1,
+  idealmente com `--no-rich-text`, para validar o novo teto + menos falhas de chunk.
+- Benchmark local vs `--backend gemini` continua em aberto.
 
 ---
 
