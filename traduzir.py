@@ -16,6 +16,8 @@ Configuration is read from a .env file in the same directory (see .env.example).
 CLI flags override .env values.
 """
 
+from __future__ import annotations
+
 import argparse
 import os
 import shlex
@@ -58,6 +60,20 @@ def collect_pdfs(inputs: list[str]) -> list[Path]:
             print(f"[aviso] Ignorando entrada inválida: {item}", file=sys.stderr)
     # Skip files that are already translation outputs
     return [p for p in pdfs if not any(tag in p.stem for tag in (".mono", ".dual", "_translated"))]
+
+
+def build_run_env(args: argparse.Namespace) -> dict | None:
+    """Ambiente do subprocesso pdf2zh_next. Com justificação ligada, injeta
+    patches/sitecustomize.py via PYTHONPATH — o Python importa sitecustomize no
+    boot e o patch embrulha o typesetter do BabelDOC (ver patches/)."""
+    if args.no_justify:
+        return None  # herda o ambiente intacto
+    env = os.environ.copy()
+    patches = str(SCRIPT_DIR / "patches")
+    prev = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = patches + (os.pathsep + prev if prev else "")
+    env["TRADUZIR_JUSTIFY"] = "1"
+    return env
 
 
 def build_command(pdf: Path, args: argparse.Namespace, env: dict) -> list[str]:
@@ -130,6 +146,8 @@ def main() -> None:
     parser.add_argument("--dual-only", action="store_true", help="Gerar apenas o PDF bilíngue lado a lado")
     parser.add_argument("--no-rich-text", action="store_true",
                         help="Traduzir sem estilos inline (negrito/itálico) — evita palavras coladas/quebradas com modelos pequenos")
+    parser.add_argument("--no-justify", action="store_true",
+                        help="Desligar a justificação de parágrafos (patch local sobre o typesetter do BabelDOC)")
     parser.add_argument("--dry-run", action="store_true", help="Mostrar comandos sem executar")
     args = parser.parse_args()
 
@@ -146,7 +164,8 @@ def main() -> None:
     if not pdfs:
         sys.exit("[erro] Nenhum PDF encontrado nas entradas fornecidas.")
 
-    print(f"Backend: {args.backend} | Destino: {args.lang_out} | Saída: {args.out}")
+    print(f"Backend: {args.backend} | Destino: {args.lang_out} | "
+          f"Justificação: {'off' if args.no_justify else 'on'} | Saída: {args.out}")
     print(f"{len(pdfs)} arquivo(s) na fila:\n" + "\n".join(f"  - {p.name}" for p in pdfs))
 
     failures = []
@@ -158,7 +177,7 @@ def main() -> None:
             safe = [("***" if cmd[j - 1].endswith("api-key") else c) for j, c in enumerate(cmd)]
             print("  " + " ".join(shlex.quote(c) for c in safe))
             continue
-        result = subprocess.run(cmd)
+        result = subprocess.run(cmd, env=build_run_env(args))
         if result.returncode != 0:
             print(f"[erro] Falha ao traduzir {pdf.name} (código {result.returncode})", file=sys.stderr)
             failures.append(pdf.name)

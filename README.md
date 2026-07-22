@@ -51,6 +51,9 @@ python traduzir.py artigo.pdf --mono-only
 # Modelos pequenos colando palavras? Traduza sem estilos inline
 python traduzir.py artigo.pdf --no-rich-text
 
+# Sem a justificação de parágrafos (patch local; ver Solução de problemas)
+python traduzir.py artigo.pdf --no-justify
+
 # Conferir o comando gerado sem executar
 python traduzir.py artigo.pdf --dry-run
 ```
@@ -116,6 +119,6 @@ docker compose exec traduzia python server.py token create felipe   # imprime o 
 - **Timeout no backend local:** modelo grande demais para a máquina; troque por um menor ou aumente `--openai-compatible-timeout` (edite `build_command` no traduzir.py).
 - **Tradução truncada/estranha:** alguns modelos pequenos "conversam" em vez de só traduzir; suba para 8B+ ou use `--gemini`.
 - **Palavras coladas/quebradas ("AssistentesDistribuída", "t entam"):** artefato dos placeholders de estilo inline com modelos pequenos; use `--no-rich-text` (perde negrito/itálico no corpo do texto).
-- **Texto traduzido sai alinhado à esquerda (sem justificação):** limitação do typesetter do BabelDOC — ele re-diagrama parágrafos traduzidos sempre alinhados à esquerda e encolhe a fonte quando o texto não cabe. Não há flag para justificar; para leitura com o layout original ao lado, use o `.dual.pdf`.
+- **Justificação de parágrafos:** o typesetter do BabelDOC só alinha à esquerda; este repo corrige com um patch próprio (`patches/sitecustomize.py`, injetado pelo `traduzir.py` via PYTHONPATH) que distribui a sobra de cada linha entre os espaços. Ligado por padrão; desligue com `--no-justify`. Linhas que quebraram cedo demais (ex.: fórmula larga) ficam à esquerda de propósito (teto de estiramento). Se um update do pdf2zh-next/babeldoc quebrar o patch, ele se desativa sozinho e loga o erro — a tradução nunca falha por causa dele.
 - **Parágrafo ficou em inglês no PDF final:** o modelo falhou naquele chunk e o BabelDOC manteve o original; rode de novo (o cache pula o que já foi traduzido) ou use `--gemini`.
 - **Flags mudaram após update do pdf2zh-next:** rode `pdf2zh_next -h` e ajuste `build_command()`.

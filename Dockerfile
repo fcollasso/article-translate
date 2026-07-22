@@ -18,6 +18,7 @@ WORKDIR /app
 COPY traduzir.py server.py ./
 COPY frontend ./frontend
 COPY favicon ./favicon
+COPY patches ./patches
 
 ENV FRONTEND_HOST=0.0.0.0
 EXPOSE 8010

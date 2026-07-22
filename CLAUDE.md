@@ -11,6 +11,7 @@ Wrapper CLI em Python sobre o `pdf2zh_next` (PDFMathTranslate 2.0 / BabelDOC) pa
 - `.env` — configuração (backend padrão, modelos, keys, R2). Nunca comitar.
 - `output/` — PDFs gerados (`.mono.pdf` traduzido, `.dual.pdf` bilíngue).
 - O trabalho pesado (layout detection, chunking, reconstrução do PDF) é todo do pdf2zh_next/BabelDOC — **não reimplementar nada disso aqui**.
+- `patches/sitecustomize.py` — exceção consciente à regra acima: patch de justificação de parágrafos (o BabelDOC só alinha à esquerda). Não reimplementa o typesetter; embrulha `_layout_typesetting_units` e redistribui a sobra de cada linha entre os espaços. Injetado pelo traduzir.py via `PYTHONPATH` + `TRADUZIR_JUSTIFY=1` no subprocesso do pdf2zh_next; desligável com `--no-justify`. Depende de internals do BabelDOC 0.6.x (invariantes no cabeçalho do arquivo) — **revalidar após qualquer update do pdf2zh-next**; se quebrar, degrada sozinho para alinhado à esquerda sem afetar a tradução.
 
 ## Convenções
 

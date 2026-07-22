@@ -16,13 +16,28 @@
 - `traduzir.py`: `--watermark-output-mode no_watermark` sempre (remove a linha em chinês) e
   novo flag `--no-rich-text` → `--disable-rich-text-translate` (evita palavras coladas com
   modelos pequenos, ao custo de negrito/itálico inline). Dry-run validado no Mac.
-- README: exemplos + 3 entradas novas em "Solução de problemas" (palavras coladas, alinhamento
-  à esquerda, parágrafo em inglês).
+- **Justificação resolvida com patch próprio** (Felipe aprovou "apenas em nosso repo"):
+  `patches/sitecustomize.py` embrulha `Typesetting._layout_typesetting_units` do BabelDOC e
+  redistribui a sobra de cada linha entre os espaços (última linha do parágrafo fica à
+  esquerda; teto de 2x a mediana do espaço evita esticar linha que quebrou cedo). Injetado
+  pelo traduzir.py via PYTHONPATH + TRADUZIR_JUSTIFY=1; `--no-justify` desliga; qualquer
+  exceção degrada para o comportamento original com log. Invariantes do BabelDOC v0.6.2
+  verificados no fonte (relocate cria unidades novas; char/unicode ancoram no current_y
+  exato; relocation_transform tem tx no índice 4). Dockerfile agora copia `patches/`.
+- Validação no Mac: 7 testes de unidade da lógica (fakes duck-typed) + e2e real com
+  pdf2zh-next 2.9.0 em venv descartável e um LLM falso (eco prefixado, sem inferência —
+  regra do Mac respeitada): A/B das 2 primeiras páginas do 2601.13956v1 confirma corpo
+  justificado nas duas margens vs. controle irregular. Flags novos conferidos no
+  `pdf2zh_next -h` da 2.9.0.
+- README (exemplos + Solução de problemas) e CLAUDE.md (exceção documentada à regra de
+  não reimplementar) atualizados.
+- `from __future__ import annotations` no traduzir.py (python3 default do Mac é 3.9).
 
 ### Pendências
-- Testar no desktop: retraduzir o 2601.13956v1 com `--no-rich-text` e comparar.
-- Avaliar rodar o mesmo artigo com `--backend gemini` (benchmark do backlog: menos chunks
-  falhados e menos palavras coladas; justificação continua perdida de qualquer jeito).
+- Desktop: `git pull` + `docker compose up -d --build` (a imagem precisa do `patches/`) e
+  retraduzir o 2601.13956v1 com o modelo real para ver a justificação em pt-BR de verdade.
+- Avaliar `--no-rich-text` no mesmo artigo (palavras coladas) e o benchmark local vs
+  `--backend gemini` (chunks falhados, ex.: 1º parágrafo da introdução em inglês).
 
 ---
 
