@@ -67,12 +67,18 @@ def build_command(pdf: Path, args: argparse.Namespace, env: dict) -> list[str]:
         "--lang-in", args.lang_in,
         "--lang-out", args.lang_out,
         "--output", str(args.out),
+        # Sem isso o BabelDOC injeta uma linha de crédito em chinês no topo de cada PDF
+        "--watermark-output-mode", "no_watermark",
     ]
 
     if args.mono_only:
         cmd.append("--no-dual")
     if args.dual_only:
         cmd.append("--no-mono")
+    if args.no_rich_text:
+        # Estilos inline (negrito/itálico) viram placeholders que modelos pequenos
+        # devolvem quebrados ("AssistentesDistribuída"); desligar troca estilo por texto limpo
+        cmd.append("--disable-rich-text-translate")
 
     if args.backend == "local":
         model = args.model or env.get("LOCAL_MODEL", "qwen3-14b")
@@ -122,6 +128,8 @@ def main() -> None:
     parser.add_argument("--qps", default=None, help="Limite de requisições por segundo")
     parser.add_argument("--mono-only", action="store_true", help="Gerar apenas o PDF traduzido (sem versão bilíngue)")
     parser.add_argument("--dual-only", action="store_true", help="Gerar apenas o PDF bilíngue lado a lado")
+    parser.add_argument("--no-rich-text", action="store_true",
+                        help="Traduzir sem estilos inline (negrito/itálico) — evita palavras coladas/quebradas com modelos pequenos")
     parser.add_argument("--dry-run", action="store_true", help="Mostrar comandos sem executar")
     args = parser.parse_args()
 

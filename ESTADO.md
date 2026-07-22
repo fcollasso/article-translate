@@ -1,6 +1,32 @@
 # ESTADO.md — tradutor-artigos
 
-## Sessão atual: 2026-07-14 (noite — publicação em traduzia.com.br)
+## Sessão atual: 2026-07-22 (qualidade da saída — alinhamento e palavras coladas)
+
+### Diagnóstico (artigo 2601.13956v1, traduzido no desktop com qwen3-8b)
+- "Sem indentação" = **justificação perdida**: o typesetter do BabelDOC (0.6.2) re-diagrama
+  parágrafos traduzidos sempre alinhados à esquerda a partir do canto sup. esquerdo da caixa
+  original, e encolhe fonte/entrelinha quando o pt-BR (~25% mais longo) não cabe. Sem flag para
+  justificar — limitação upstream, não é bug nosso. Prova: parágrafo que o modelo falhou ficou
+  em inglês E perfeitamente justificado (original intocado).
+- Outros achados no mesmo PDF: 1º parágrafo da introdução não traduzido (chunk falhou no 8B),
+  palavras coladas ("AssistentesDistribuída") por placeholders de rich text, e linha de
+  watermark do BabelDOC em chinês no topo.
+
+### Feito
+- `traduzir.py`: `--watermark-output-mode no_watermark` sempre (remove a linha em chinês) e
+  novo flag `--no-rich-text` → `--disable-rich-text-translate` (evita palavras coladas com
+  modelos pequenos, ao custo de negrito/itálico inline). Dry-run validado no Mac.
+- README: exemplos + 3 entradas novas em "Solução de problemas" (palavras coladas, alinhamento
+  à esquerda, parágrafo em inglês).
+
+### Pendências
+- Testar no desktop: retraduzir o 2601.13956v1 com `--no-rich-text` e comparar.
+- Avaliar rodar o mesmo artigo com `--backend gemini` (benchmark do backlog: menos chunks
+  falhados e menos palavras coladas; justificação continua perdida de qualquer jeito).
+
+---
+
+## Sessão: 2026-07-14 (noite — publicação em traduzia.com.br)
 
 ### Decisão
 Felipe comprou **traduzia.com.br** (Hostinger) e o app vai para a web: o nginx da VPS
