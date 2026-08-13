@@ -738,7 +738,7 @@ const HUB = "/api/hub";
 
 const state = {
   backendDown: null, // null = ainda sem contato; força o primeiro update do pill
-  hub: { available: false, r2: false },
+  hub: { available: false, r2: false, auth: null }, // auth: "ok" | "denied" | null
   files: [],
   filesTimer: null,
   nodes: [],         // {id, label, base, online, gpu, auth: "ok"|"denied"|null}
@@ -852,9 +852,21 @@ function ensureSelection() {
 async function refreshNodes() {
   clearTimeout(state.nodesTimer);
   if (document.hidden) return;
+  await probeHub();
+  // o hub manda no acesso, então a validade do token com ele é reconferida
+  // sempre — não só quando o acervo é carregado (que depende do R2 ligado)
+  if (state.hub.available && TOKEN) {
+    try {
+      await fetchJSON("", HUB + "/auth/check");
+      state.hub.auth = "ok";
+    } catch (e) {
+      if (e.httpStatus === 401) state.hub.auth = "denied";
+    }
+  }
   await Promise.all(state.nodes.map(probeNode));
   ensureSelection();
   renderNodePicker();
+  if (handleAuthFailure()) return;
   state.nodesTimer = setTimeout(refreshNodes, 15000);
 }
 
@@ -912,10 +924,19 @@ async function fetchJSON(base, path, opts = {}) {
   return body;
 }
 
-/** Um 401 não derruba mais a sessão sozinho: com duas máquinas é normal o token
-    valer só numa delas. Só volta para o login quando nenhuma máquina no ar
-    aceita o token. Devolve true se a sessão foi encerrada. */
+/** Quem decide o acesso ao site é o hub — ele é a porta de entrada. Um 401 de
+    máquina não derruba a sessão (é normal o token valer só em algumas), só
+    marca aquela máquina no seletor. Sem hub no ar (acesso direto a uma
+    máquina), a própria máquina é a única autoridade que existe.
+    Devolve true se a sessão foi encerrada. */
 function handleAuthFailure() {
+  if (state.hub.available) {
+    if (state.hub.auth === "denied") {
+      requireLogin("token inválido ou expirado — cole o token de novo.");
+      return true;
+    }
+    return false;
+  }
   const online = state.nodes.filter((n) => n.online);
   if (online.length && online.every((n) => n.auth === "denied")) {
     requireLogin("token inválido ou expirado — cole o token de novo.");
@@ -1039,11 +1060,16 @@ async function pollFiles() {
   if (document.hidden || !state.hub.available || !state.hub.r2) return;
   try {
     const data = await fetchJSON("", HUB + "/files");
+    state.hub.auth = "ok";
     state.files = Array.isArray(data.jobs) ? data.jobs : [];
     $("files-section").hidden = false;
     renderFiles(state.files);
   } catch (e) {
-    if (e.httpStatus === 401) $("files-section").hidden = true;
+    if (e.httpStatus === 401) {
+      state.hub.auth = "denied";
+      $("files-section").hidden = true;
+      if (handleAuthFailure()) return;
+    }
   }
   // as URLs do R2 expiram em 1h; o poll de 1 min mantém os links sempre válidos
   state.filesTimer = setTimeout(pollFiles, 60000);
@@ -1522,6 +1548,7 @@ function requireLogin(msg) {
   clearTimeout(state.nodesTimer);
   clearTimeout(state.filesTimer);
   for (const n of state.nodes) n.auth = null;
+  state.hub.auth = null;
   $("files-section").hidden = true;
   $("logout-btn").hidden = true;
   $("login-err").textContent = msg || "";
@@ -1559,6 +1586,7 @@ $("login-form").addEventListener("submit", async (e) => {
       try {
         const r = await fetch(HUB + "/auth/check", { headers: { Authorization: "Bearer " + value } });
         hubOk = r.ok;
+        state.hub.auth = r.ok ? "ok" : "denied";
         if (!r.ok) {
           const body = await r.json().catch(() => null);
           detail = body && body.detail ? body.detail : "";
@@ -1585,7 +1613,11 @@ $("login-form").addEventListener("submit", async (e) => {
     }));
     state.pickerSig = null; // o auth mudou; força o seletor a redesenhar
     renderNodePicker();
-    if (hubOk || oks.some(Boolean)) {
+    // Com o hub no ar, só ele autoriza a entrada: as máquinas respondem por si
+    // (verde/amarelo), não pelo acesso ao site. Sem hub, o acesso é direto a uma
+    // máquina e ela é a única autoridade.
+    const granted = state.hub.available ? hubOk : oks.some(Boolean);
+    if (granted) {
       TOKEN = value;
       try { localStorage.setItem("traduzai.token", value); } catch (err) { /* ok */ }
       $("token-input").value = "";
