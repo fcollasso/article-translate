@@ -113,6 +113,35 @@ docker compose exec traduzia python server.py token create felipe   # imprime o 
 - O vhost do nginx da VPS está versionado em `deploy/nginx/traduzia.conf`; o passo a passo do deploy está no `ESTADO.md`.
 - Sem Docker (`.venv/bin/python server.py`) também funciona, mas exige `pip install boto3`, `FRONTEND_HOST=0.0.0.0` e portproxy do Windows→WSL — o Docker Desktop publica a porta no Windows sozinho.
 
+### Subir em outra máquina (do zero)
+
+Duas coisas **não vêm no clone** e precisam ser providenciadas na máquina nova: o `.env` (está no `.gitignore`) e o LM Studio com o modelo.
+
+1. **Clonar o repo e copiar o `.env`** da máquina antiga para a raiz do projeto (backend padrão, modelo, `LOCAL_QPS`/`LOCAL_WORKERS`, credenciais do R2).
+2. **LM Studio no Windows** (a inferência roda fora do container):
+   - Baixar o modelo `qwen/qwen3-8b` (GGUF Q4_K_M, ~5 GB)
+   - Subir o servidor aceitando conexões externas — senão o container não alcança:
+     ```
+     lms server start --bind 0.0.0.0
+     ```
+   - Carregar o modelo com `-c 8192 --parallel 2` (config validada para 8 GB de VRAM)
+3. **Subir o container** (Docker Desktop com integração WSL2):
+   ```bash
+   docker compose up -d --build
+   ```
+   O compose já aponta para o LM Studio via `host.docker.internal:1234` — não precisa mexer em IP.
+4. **Criar o token de acesso** (o frontend exige):
+   ```bash
+   docker compose exec traduzia python server.py token create felipe
+   ```
+
+Depois é só abrir `http://localhost:8010`.
+
+Observações:
+- Máquina **sem GPU NVIDIA**: remova `gpus: all` do `docker-compose.yml` (só perde os gráficos de GPU no painel) — mas o LM Studio vai precisar de GPU razoável para o Qwen 8B render.
+- Os jobs/tokens ficam no volume `traduzia-data`, que começa zerado na máquina nova.
+- Para a máquina nova assumir o traduzia.com.br: instalar o Tailscale nela e atualizar o IP no vhost do nginx da VPS (`deploy/nginx/traduzia.conf`).
+
 ## Solução de problemas
 
 - **Erro 429 (Gemini):** reduza `GEMINI_QPS` ou aguarde a janela de rate limit.
