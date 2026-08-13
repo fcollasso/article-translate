@@ -247,6 +247,21 @@
   .acervo-head { display: flex; align-items: baseline; gap: 10px; font-size: 13px; }
   .acervo-head .id { font-family: var(--mono); font-size: 11.5px; color: var(--text-3); }
   .acervo-head .when { margin-left: auto; font-size: 12px; color: var(--text-3); }
+  /* excluir: confirmação em duas etapas no próprio botão, sem diálogo do navegador */
+  .del {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: none;
+    padding: 3px 10px;
+    font-family: inherit;
+    font-size: 12px;
+    color: var(--text-3);
+    cursor: pointer;
+    transition: border-color .15s, color .15s, background .15s;
+  }
+  .del:hover:not(:disabled) { border-color: var(--red); color: var(--red); }
+  .del.armed { border-color: var(--red); background: var(--red-soft); color: var(--red); font-weight: 600; }
+  .del:disabled { opacity: .45; cursor: not-allowed; }
 
   .job {
     display: flex;
@@ -1024,6 +1039,47 @@ function setFilesOpen(open) {
   btn.setAttribute("aria-expanded", String(open));
 }
 
+/** Apagar mexe no R2, e só as máquinas têm credencial de escrita — o hub é
+    somente leitura de propósito. Então a exclusão vai para uma máquina no ar. */
+function buildDeleteBtn(job) {
+  const btn = el("button", "del");
+  btn.type = "button";
+  const target = selectedNode()?.online ? selectedNode() : state.nodes.find((n) => n.online);
+  const reset = () => { btn.textContent = "excluir"; btn.classList.remove("armed"); btn.dataset.armed = ""; };
+  reset();
+
+  if (!target) {
+    btn.disabled = true;
+    btn.title = "é preciso uma máquina ligada para apagar do acervo";
+    return btn;
+  }
+  btn.title = `apagar do acervo (via ${target.label})`;
+
+  btn.addEventListener("click", async () => {
+    if (!btn.dataset.armed) {           // 1º clique: arma e volta sozinho em 4s
+      btn.textContent = "confirmar?";
+      btn.classList.add("armed");
+      btn.dataset.armed = "1";
+      setTimeout(() => { if (btn.dataset.armed) reset(); }, 4000);
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = "apagando…";
+    try {
+      await fetchJSON(target.base, "/api/files/" + encodeURIComponent(job.id), { method: "DELETE" });
+      state.files = state.files.filter((j) => j.id !== job.id);
+      renderFiles(state.files);
+    } catch (e) {
+      btn.disabled = false;
+      reset();
+      btn.textContent = "falhou";
+      btn.title = e.message || "falha ao apagar";
+      setTimeout(reset, 4000);
+    }
+  });
+  return btn;
+}
+
 function renderFiles(jobs) {
   const list = $("files-list");
   list.innerHTML = "";
@@ -1034,7 +1090,7 @@ function renderFiles(jobs) {
     id.textContent = job.id;
     const when = el("span", "when");
     when.textContent = fmtDate(job.modified);
-    head.append(id, when);
+    head.append(id, when, buildDeleteBtn(job));
 
     const files = el("div", "job-files");
     for (const f of job.files || []) {

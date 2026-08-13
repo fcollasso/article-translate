@@ -651,6 +651,42 @@ def download(job_id: str, name: str, exp: int = 0, sig: str = ""):
     return FileResponse(path, filename=path.name)
 
 
+JOB_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
+
+
+@app.delete("/api/files/{job_id}")
+def delete_files(job_id: str) -> dict:
+    """Apaga do R2 tudo de um job — é o que sustenta o acervo do site.
+
+    Vive nos nós, e não no hub, de propósito: só as máquinas têm credencial de
+    escrita no bucket. O hub, que é a peça exposta na internet, segue apenas com
+    leitura e não consegue destruir nada. O custo é precisar de uma máquina
+    ligada para apagar, o que é aceitável para uma operação não urgente."""
+    if not JOB_ID_RE.fullmatch(job_id):
+        raise HTTPException(400, detail="identificador de trabalho inválido")
+    if not R2_ENABLED:
+        raise HTTPException(503, detail="R2 não configurado nesta máquina")
+
+    prefix = f"jobs/{job_id}/"
+    keys = []
+    try:
+        for page in r2().get_paginator("list_objects_v2").paginate(Bucket=R2_BUCKET, Prefix=prefix):
+            keys += [{"Key": o["Key"]} for o in page.get("Contents", [])]
+        if keys:
+            r2().delete_objects(Bucket=R2_BUCKET, Delete={"Objects": keys})
+    except Exception as exc:
+        raise HTTPException(502, detail=f"falha ao apagar no R2: {exc}")
+
+    # se este nó também tiver o job no histórico/disco, some com ele junto —
+    # senão sobraria um item na lista apontando para arquivo que não existe mais
+    with closing(db()) as conn, conn:
+        conn.execute("DELETE FROM jobs WHERE id=?", (job_id,))
+    for path in (job_out_dir(job_id), UPLOADS_DIR / job_id):
+        if path.is_dir():
+            shutil.rmtree(path, ignore_errors=True)
+    return {"deleted": len(keys)}
+
+
 @app.get("/api/metrics")
 def metrics() -> dict:
     return {
@@ -774,7 +810,15 @@ def token_cli(args: list[str]) -> None:
                 conn.execute("INSERT INTO tokens (name, token_hash, created_at) VALUES (?, ?, ?)",
                              (args[1], hash_token(token), time.time()))
         except sqlite3.IntegrityError:
-            sys.exit(f"[erro] já existe um token chamado {args[1]!r}")
+            # o nome só fica reservado enquanto o token está ativo: revogado pode
+            # ser reaproveitado, senão revogar queimaria o nome para sempre
+            with closing(db()) as conn, conn:
+                freed = conn.execute("DELETE FROM tokens WHERE name=? AND revoked_at IS NOT NULL",
+                                     (args[1],)).rowcount
+                if not freed:
+                    sys.exit(f"[erro] já existe um token ATIVO chamado {args[1]!r} — revogue antes")
+                conn.execute("INSERT INTO tokens (name, token_hash, created_at) VALUES (?, ?, ?)",
+                             (args[1], hash_token(token), time.time()))
         if given:
             print(f"Token {args[1]!r} registrado neste nó ({NODE_ID}).")
         else:
