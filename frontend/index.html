@@ -298,7 +298,7 @@
   }
 
   /* enviar para o acervo, na lista de trabalhos */
-  .job-actions { display: flex; }
+  .job-actions { display: flex; align-items: center; gap: 8px; }
   .arch {
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -1410,7 +1410,10 @@ function buildJobEl() {
   archive.type = "button";
   archive.textContent = "enviar para o acervo";
   archive.title = "sobe os arquivos para o acervo e libera o espaço nesta máquina";
-  actions.append(archive);
+  const discard = el("button", "del");
+  discard.type = "button";
+  discard.textContent = "excluir";
+  actions.append(archive, discard);
   actions.hidden = true;
 
   const log = el("details", "log");
@@ -1421,7 +1424,7 @@ function buildJobEl() {
   log.hidden = true;
 
   root.append(row1, progress, errorBox, files, actions, log);
-  return { root, refs: { badge, name, nodeChip, time, progress, stage, pct, fill, errorBox, log, logPre, files, actions, archive }, filesSig: "", lastLog: null };
+  return { root, refs: { badge, name, nodeChip, time, progress, stage, pct, fill, errorBox, log, logPre, files, actions, archive, discard }, filesSig: "", lastLog: null };
 }
 
 function updateJobEl(entry, job) {
@@ -1515,13 +1518,48 @@ function updateJobEl(entry, job) {
   // arquivar: sobe para o acervo e libera a máquina. Vai para o nó que rodou o
   // job (é lá que os arquivos estão), não para o selecionado no topo.
   const owner = nodeById(job.node);
-  const canArchive = job.status === "done" && filesArr.length && owner && owner.online;
-  refs.actions.hidden = !canArchive;
-  if (canArchive) {
+  const alive = owner && owner.online && job.status !== "running";
+  refs.actions.hidden = !alive;
+  if (alive) {
+    // arquivar só faz sentido para trabalho concluído; excluir vale para
+    // qualquer um parado, inclusive os que falharam
+    refs.archive.hidden = !(job.status === "done" && filesArr.length);
     refs.archive.disabled = false;
     refs.archive.textContent = "enviar para o acervo";
     refs.archive.onclick = () => archiveJob(job, refs.archive, owner);
+    armDiscard(refs.discard, job, owner);
   }
+}
+
+/** Excluir some com o trabalho: histórico, disco e as cópias no R2. Confirmação
+    em duas etapas no próprio botão, igual à do acervo. */
+function armDiscard(btn, job, node) {
+  const reset = () => { btn.textContent = "excluir"; btn.classList.remove("armed"); btn.dataset.armed = ""; };
+  if (!btn.dataset.armed) reset();
+  btn.disabled = false;
+  btn.title = "apaga o trabalho desta máquina e do acervo";
+  btn.onclick = async () => {
+    if (!btn.dataset.armed) {
+      btn.textContent = "confirmar?";
+      btn.classList.add("armed");
+      btn.dataset.armed = "1";
+      setTimeout(() => { if (btn.dataset.armed) reset(); }, 4000);
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = "apagando…";
+    try {
+      await fetchJSON(node.base, "/api/jobs/" + encodeURIComponent(job.id), { method: "DELETE" });
+      pollJobs();
+      pollFiles();
+    } catch (e) {
+      btn.disabled = false;
+      reset();
+      btn.textContent = "falhou";
+      btn.title = e.message || "falha ao excluir";
+      setTimeout(reset, 4000);
+    }
+  };
 }
 
 async function archiveJob(job, btn, node) {

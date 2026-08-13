@@ -721,6 +721,39 @@ def archive_job(job_id: str) -> dict:
     return {"archived": len(files)}
 
 
+@app.delete("/api/jobs/{job_id}")
+def delete_job(job_id: str) -> dict:
+    """Descarta um trabalho: histórico, arquivos em disco e, se houver, as cópias
+    no R2. É o 'excluir' da lista de trabalhos — diferente de 'enviar para o
+    acervo', que preserva no R2 e só libera a máquina."""
+    if not JOB_ID_RE.fullmatch(job_id):
+        raise HTTPException(400, detail="identificador de trabalho inválido")
+    with closing(db()) as conn:
+        row = conn.execute("SELECT status FROM jobs WHERE id=?", (job_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, detail="Trabalho não encontrado")
+    if row["status"] == "running":
+        raise HTTPException(409, detail="trabalho em andamento — espere terminar")
+
+    removed = 0
+    if R2_ENABLED:
+        try:
+            objects = r2_job_keys(job_id)
+            if objects:
+                r2().delete_objects(Bucket=R2_BUCKET,
+                                    Delete={"Objects": [{"Key": o["Key"]} for o in objects]})
+                removed = len(objects)
+        except Exception as exc:
+            raise HTTPException(502, detail=f"falha ao apagar no R2: {exc}")
+
+    with closing(db()) as conn, conn:
+        conn.execute("DELETE FROM jobs WHERE id=?", (job_id,))
+    for path in (job_out_dir(job_id), UPLOADS_DIR / job_id):
+        if path.is_dir():
+            shutil.rmtree(path, ignore_errors=True)
+    return {"deleted": removed}
+
+
 @app.post("/api/files/{job_id}/name")
 async def rename_files(job_id: str, request: Request) -> dict:
     """Troca o nome-base dos arquivos de um job no R2. Renomear em S3 é cópia +
