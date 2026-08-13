@@ -1531,13 +1531,13 @@ function updateJobEl(entry, job) {
   }
 }
 
-/** Excluir some com o trabalho: histórico, disco e as cópias no R2. Confirmação
-    em duas etapas no próprio botão, igual à do acervo. */
+/** Excluir tira o trabalho só desta máquina — o acervo é outra coisa e não é
+    tocado. Confirmação em duas etapas no próprio botão, igual à do acervo. */
 function armDiscard(btn, job, node) {
   const reset = () => { btn.textContent = "excluir"; btn.classList.remove("armed"); btn.dataset.armed = ""; };
   if (!btn.dataset.armed) reset();
   btn.disabled = false;
-  btn.title = "apaga o trabalho desta máquina e do acervo";
+  btn.title = "descarta o trabalho desta máquina (não mexe no acervo)";
   btn.onclick = async () => {
     if (!btn.dataset.armed) {
       btn.textContent = "confirmar?";
@@ -1550,8 +1550,7 @@ function armDiscard(btn, job, node) {
     btn.textContent = "apagando…";
     try {
       await fetchJSON(node.base, "/api/jobs/" + encodeURIComponent(job.id), { method: "DELETE" });
-      pollJobs();
-      pollFiles();
+      pollJobs(); // o acervo não muda: excluir aqui não mexe no R2
     } catch (e) {
       btn.disabled = false;
       reset();

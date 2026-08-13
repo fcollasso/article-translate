@@ -723,9 +723,12 @@ def archive_job(job_id: str) -> dict:
 
 @app.delete("/api/jobs/{job_id}")
 def delete_job(job_id: str) -> dict:
-    """Descarta um trabalho: histórico, arquivos em disco e, se houver, as cópias
-    no R2. É o 'excluir' da lista de trabalhos — diferente de 'enviar para o
-    acervo', que preserva no R2 e só libera a máquina."""
+    """Tira o trabalho desta máquina: histórico e arquivos em disco.
+
+    Não encosta no R2 de propósito — trabalho e acervo são coisas separadas. O
+    que já foi para o acervo vive lá e só sai por lá (DELETE /api/files/{id}).
+    Aqui é descarte do que está na máquina: 'enviar para o acervo' guarda antes
+    de liberar, 'excluir' joga fora."""
     if not JOB_ID_RE.fullmatch(job_id):
         raise HTTPException(400, detail="identificador de trabalho inválido")
     with closing(db()) as conn:
@@ -735,23 +738,12 @@ def delete_job(job_id: str) -> dict:
     if row["status"] == "running":
         raise HTTPException(409, detail="trabalho em andamento — espere terminar")
 
-    removed = 0
-    if R2_ENABLED:
-        try:
-            objects = r2_job_keys(job_id)
-            if objects:
-                r2().delete_objects(Bucket=R2_BUCKET,
-                                    Delete={"Objects": [{"Key": o["Key"]} for o in objects]})
-                removed = len(objects)
-        except Exception as exc:
-            raise HTTPException(502, detail=f"falha ao apagar no R2: {exc}")
-
     with closing(db()) as conn, conn:
         conn.execute("DELETE FROM jobs WHERE id=?", (job_id,))
     for path in (job_out_dir(job_id), UPLOADS_DIR / job_id):
         if path.is_dir():
             shutil.rmtree(path, ignore_errors=True)
-    return {"deleted": removed}
+    return {"deleted": job_id}
 
 
 @app.post("/api/files/{job_id}/name")
