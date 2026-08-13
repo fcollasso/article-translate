@@ -13,6 +13,11 @@ Tokens de acesso (a UI pede um token na entrada):
   python server.py token list
   python server.py token revoke <nome>
 
+Manutenção:
+  python server.py r2 push               # sobe para o R2 as saídas que só existem em disco
+  python server.py purge                 # zera histórico e arquivos locais (recusa o que
+                                         # não está no R2; --force ignora)
+
 Como funciona:
   - Cada máquina (desktop, mac) roda uma instância completa e independente deste
     servidor — fila, banco e LM Studio próprios. Quem junta as duas é o nginx da
@@ -694,6 +699,66 @@ async def llm_proxy(path: str, request: Request) -> Response:
 
 # ---------------------------------------------------------------- CLI de tokens
 
+def r2_push_cli() -> None:
+    """Sobe para o R2 as saídas de jobs concluídos que ainda só existem em disco.
+    Serve para migrar o que foi traduzido antes de o R2 existir, e é idempotente:
+    arquivo que já tem chave é pulado."""
+    if not R2_ENABLED:
+        sys.exit("[erro] R2 não configurado no .env (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, ...)")
+    with closing(db()) as conn:
+        rows = conn.execute("SELECT id, filename, files FROM jobs WHERE status='done'").fetchall()
+
+    sent = skipped = missing = 0
+    for row in rows:
+        files = json.loads(row["files"])
+        changed = False
+        for f in files:
+            if f.get("key"):
+                skipped += 1
+                continue
+            path = job_out_dir(row["id"]) / f["name"]
+            if not path.is_file():
+                print(f"  [aviso] sumiu do disco: {row['id']}/{f['name']}")
+                missing += 1
+                continue
+            key = f"jobs/{row['id']}/{f['name']}"
+            content_type = "application/pdf" if f["name"].endswith(".pdf") else "text/csv"
+            r2().upload_file(str(path), R2_BUCKET, key, ExtraArgs={"ContentType": content_type})
+            f["key"] = key
+            changed = True
+            sent += 1
+            print(f"  ↑ {key}")
+        if changed:
+            with closing(db()) as conn, conn:
+                conn.execute("UPDATE jobs SET files=? WHERE id=?", (json.dumps(files), row["id"]))
+    print(f"\n{sent} enviado(s), {skipped} já estavam no R2"
+          + (f", {missing} sem arquivo em disco" if missing else ""))
+
+
+def purge_cli(force: bool) -> None:
+    """Zera o histórico de jobs e os arquivos locais desta máquina. Recusa apagar
+    o que ainda não está no R2 — senão a limpeza vira perda de tradução."""
+    with closing(db()) as conn:
+        rows = conn.execute("SELECT id, status, files FROM jobs").fetchall()
+    at_risk = [r["id"] for r in rows
+               if r["status"] == "done" and any(not f.get("key") for f in json.loads(r["files"]))]
+    if at_risk and not force:
+        sys.exit(f"[erro] {len(at_risk)} job(s) concluído(s) têm arquivo fora do R2 "
+                 f"({', '.join(at_risk[:3])}{'…' if len(at_risk) > 3 else ''}).\n"
+                 f"       Rode 'python server.py r2 push' antes, ou use --force para apagar assim mesmo.")
+
+    with closing(db()) as conn, conn:
+        removed = conn.execute("DELETE FROM jobs").rowcount
+    freed = 0
+    for base in (OUTPUT_DIR, UPLOADS_DIR):
+        if not base.is_dir():
+            continue
+        for child in base.iterdir():
+            freed += sum(f.stat().st_size for f in child.rglob("*") if f.is_file()) if child.is_dir() else child.stat().st_size
+            shutil.rmtree(child) if child.is_dir() else child.unlink()
+    print(f"{removed} job(s) removido(s) do histórico; {freed / 1024 / 1024:.1f} MB liberados em disco.")
+
+
 def token_cli(args: list[str]) -> None:
     global DOWNLOAD_SECRET
     DOWNLOAD_SECRET = init_db()
@@ -772,7 +837,16 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "token":
+    cmd = sys.argv[1] if len(sys.argv) > 1 else ""
+    if cmd == "token":
         token_cli(sys.argv[2:])
+    elif cmd == "r2" and sys.argv[2:3] == ["push"]:
+        DOWNLOAD_SECRET = init_db()
+        r2_push_cli()
+    elif cmd == "purge":
+        DOWNLOAD_SECRET = init_db()
+        purge_cli("--force" in sys.argv)
+    elif cmd in ("r2", "purge"):
+        sys.exit("uso: python server.py {r2 push | purge [--force]}")
     else:
         main()
