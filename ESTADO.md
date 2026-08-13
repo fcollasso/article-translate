@@ -105,20 +105,38 @@ tinha rodado esse artigo) e/ou `--parallel 2` estreito demais para os 24 GB unif
   acervo funciona), token válido só numa máquina, e modo direto. Todos ok. (Harness ficou
   no scratchpad da sessão, não foi versionado — vale portar para o repo algum dia.)
 
+### Deploy feito (mesma sessão, via SSH na VPS)
+- Repo clonado em `/root/traduzia`; hub buildado e no ar (`docker compose -f
+  deploy/hub/docker-compose.yml --env-file deploy/hub/.env up -d --build`).
+- **A rede do quark é `quark_quark_net`**, não o `quark_default` que eu havia chutado —
+  está no `deploy/hub/.env` da VPS (`QUARK_NETWORK`).
+- Vhost novo instalado em `/root/quark/nginx/conf.d/traduzia.conf` (backup do antigo em
+  `.bak-<data>`), validado com `nginx -t` antes do `reload`.
+- Verificado de fora: `/` sai do hub com o frontend novo, `/n/mac/…` responde através do
+  tailnet, `/llmproxy` e `/n/<id>/llmproxy` dão 403, HTTP→HTTPS 301.
+- R2: token **Object Read only** no hub (confirmado que essa permissão **também lista** o
+  bucket, que era a dúvida). Permissões dos dois `.env` da VPS travadas em 600.
+- Token rotacionado: valor novo cadastrado no Mac (`felipe-web`) e o hash no hub; o antigo
+  do Mac foi revogado. **Falta cadastrar no desktop.**
+
+### Limpeza para "só R2"
+- `server.py` ganhou `r2 push` (sobe saídas que só existem em disco; idempotente) e
+  `purge` (zera histórico + arquivos locais, **recusando** job concluído fora do R2 —
+  `--force` ignora). Resolve o crescimento sem limite de `output/`+`uploads/`.
+- Mac: os 3 arquivos da tradução de 78 min foram migrados para o R2 (via container
+  descartável com boto3, sem rebuild), conferidos no acervo e baixados pela URL assinada;
+  só então o histórico e os arquivos locais foram apagados.
+- O acervo mostra **8 jobs / 69 MB** — o desktop já vinha subindo para o mesmo bucket.
+
 ### Pendências (nesta ordem)
-1. **R2**: Felipe criou um bucket novo; falta preencher `R2_*` no `.env` das duas máquinas
-   (campos já preparados) e no ambiente do hub. Sugerido: token R/W para os PCs, token só
-   de leitura para o hub (é a peça exposta na internet).
-2. **Rebuild do nó Mac** — a imagem que está rodando tem o `index.html` antigo (o build
-   correu antes das mudanças do frontend). Adiado a pedido do Felipe.
-3. **Desktop**: `git pull` + `docker compose up -d --build`. Enquanto não fizer, ele
-   responde 404 em `/node` e aparece como offline no seletor (confirmado por curl).
-4. **VPS**: subir o hub (`deploy/hub/`), **confirmar o nome da rede Docker do quark**
-   (`QUARK_NETWORK`, default `quark_default`) e aplicar o vhost novo.
-5. Token: replicar o mesmo valor nas duas máquinas (`--token`) e o hash no hub.
-6. Conferência visual da UI no navegador — feita só por código até agora; o Felipe vai
-   testar pelo site.
-7. Investigar a lentidão da extração de termos no Mac.
+1. **Desktop**: `git pull` + rebuild (para pegar `r2 push`/`purge`), cadastrar o token novo
+   com `--token`, revogar o antigo e rodar `purge`.
+2. **Rebuild do nó Mac** — a imagem rodando ainda tem o `index.html` antigo e o processo
+   subiu antes das credenciais R2, então **o Mac ainda não sobe saídas para o R2**. Sem
+   isso, tradução nova no Mac fica só local. (Um `restart` resolve o R2; o rebuild também
+   traz o frontend novo para o acesso local em localhost:8010.)
+3. Conferência visual da UI no navegador — feita só por código até agora.
+4. Investigar a lentidão da extração de termos no Mac (78 min vs 14,8 min do desktop).
 
 ---
 

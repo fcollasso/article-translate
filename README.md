@@ -155,6 +155,20 @@ e ajuste `QUARK_NETWORK` se não for `quark_default`.
 - Sem Docker (`.venv/bin/python server.py`) também funciona, mas exige `pip install boto3`, `FRONTEND_HOST=0.0.0.0` e portproxy do Windows→WSL — o Docker Desktop publica a porta no Windows sozinho.
 - Aberto direto na máquina (`http://localhost:8010`) o site funciona igual, só sem o seletor: sem o nginx na frente não existe prefixo `/n/`, e o frontend entra em modo de máquina única.
 
+### Manutenção das máquinas
+
+O `output/` e o `uploads/` crescem sem limite, e o histórico de jobs fica no SQLite de
+cada máquina. Para deixar tudo apenas no R2:
+
+```bash
+docker compose exec traduzia python server.py r2 push   # sobe o que só existe em disco
+docker compose exec traduzia python server.py purge     # zera histórico e arquivos locais
+```
+
+O `purge` se **recusa** a apagar job concluído cujos arquivos ainda não estão no R2 (use
+`--force` para ignorar) — assim a limpeza não vira perda de tradução. O `r2 push` é
+idempotente: roda quantas vezes quiser.
+
 ### Subir uma máquina nova (do zero)
 
 Duas coisas **não vêm no clone** e precisam ser providenciadas: o `.env` (está no `.gitignore`) e o LM Studio com o modelo.
