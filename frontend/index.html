@@ -263,6 +263,56 @@
   .del.armed { border-color: var(--red); background: var(--red-soft); color: var(--red); font-weight: 600; }
   .del:disabled { opacity: .45; cursor: not-allowed; }
 
+  /* nome do arquivo: clicou, editou */
+  .name-btn {
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: none;
+    padding: 2px 6px;
+    margin-left: -6px;
+    font-family: inherit;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text);
+    text-align: left;
+    cursor: text;
+    max-width: 46ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .name-btn:hover:not(:disabled) { border-color: var(--border-strong); }
+  .name-btn:disabled { cursor: default; }
+  .name-input {
+    font-family: inherit;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text);
+    background: var(--surface-2);
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    padding: 2px 6px;
+    margin-left: -6px;
+    width: 46ch;
+    max-width: 100%;
+  }
+
+  /* enviar para o acervo, na lista de trabalhos */
+  .job-actions { display: flex; }
+  .arch {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: none;
+    padding: 5px 12px;
+    font-family: inherit;
+    font-size: 12.5px;
+    color: var(--text-2);
+    cursor: pointer;
+    transition: border-color .15s, color .15s;
+  }
+  .arch:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .arch:disabled { opacity: .5; cursor: not-allowed; }
+
   .job {
     display: flex;
     flex-direction: column;
@@ -1039,6 +1089,73 @@ function setFilesOpen(open) {
   btn.setAttribute("aria-expanded", String(open));
 }
 
+// o sufixo é o que identifica o arquivo; o nome-base é o que o Felipe edita
+const FILE_SUFFIXES = [".mono.pdf", ".dual.pdf", ".glossary.csv"];
+
+function baseNameOf(job) {
+  for (const f of job.files || []) {
+    for (const s of FILE_SUFFIXES) if (f.name.endsWith(s)) return f.name.slice(0, -s.length);
+  }
+  const first = (job.files || [])[0];
+  return first ? first.name.replace(/\.[^.]+$/, "") : job.id;
+}
+
+/** Nome clicável: vira campo de texto, Enter salva, Esc cancela. Renomear mexe
+    no R2 (cópia + remoção do lado do servidor), então vai para uma máquina. */
+function buildNameEditor(job) {
+  const wrap = el("span", "acervo-name");
+  const label = el("button", "name-btn");
+  label.type = "button";
+  label.textContent = baseNameOf(job);
+
+  const target = () => (selectedNode()?.online ? selectedNode() : state.nodes.find((n) => n.online));
+  if (!target()) {
+    label.disabled = true;
+    label.title = "é preciso uma máquina ligada para renomear";
+  } else {
+    label.title = "clique para renomear";
+  }
+
+  label.addEventListener("click", () => {
+    const node = target();
+    if (!node) return;
+    const original = label.textContent;
+    const input = el("input", "name-input");
+    input.value = original;
+    wrap.replaceChild(input, label);
+    input.focus();
+    input.select();
+
+    let done = false;
+    const finish = async (save) => {
+      if (done) return;
+      done = true;
+      const value = input.value.trim();
+      wrap.replaceChild(label, input);
+      if (!save || !value || value === original) return;
+      label.textContent = "renomeando…";
+      try {
+        const r = await fetchJSON(node.base, `/api/files/${encodeURIComponent(job.id)}/name`,
+          { method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: value }) });
+        label.textContent = r.name;
+        pollFiles(); // recarrega: as URLs assinadas apontam para os nomes antigos
+      } catch (e) {
+        label.textContent = original;
+        label.title = e.message || "falha ao renomear";
+      }
+    };
+    input.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") { ev.preventDefault(); finish(true); }
+      if (ev.key === "Escape") { ev.preventDefault(); finish(false); }
+    });
+    input.addEventListener("blur", () => finish(true));
+  });
+
+  wrap.append(label);
+  return wrap;
+}
+
 /** Apagar mexe no R2, e só as máquinas têm credencial de escrita — o hub é
     somente leitura de propósito. Então a exclusão vai para uma máquina no ar. */
 function buildDeleteBtn(job) {
@@ -1090,7 +1207,7 @@ function renderFiles(jobs) {
     id.textContent = job.id;
     const when = el("span", "when");
     when.textContent = fmtDate(job.modified);
-    head.append(id, when, buildDeleteBtn(job));
+    head.append(buildNameEditor(job), id, when, buildDeleteBtn(job));
 
     const files = el("div", "job-files");
     for (const f of job.files || []) {
@@ -1286,6 +1403,16 @@ function buildJobEl() {
   const files = el("div", "job-files");
   files.hidden = true;
 
+  // fora do bloco de arquivos de propósito: aquele é reconstruído a cada troca
+  // de assinatura e levaria o botão junto
+  const actions = el("div", "job-actions");
+  const archive = el("button", "arch");
+  archive.type = "button";
+  archive.textContent = "enviar para o acervo";
+  archive.title = "sobe os arquivos para o acervo e libera o espaço nesta máquina";
+  actions.append(archive);
+  actions.hidden = true;
+
   const log = el("details", "log");
   const logSummary = el("summary");
   logSummary.textContent = "ver log";
@@ -1293,8 +1420,8 @@ function buildJobEl() {
   log.append(logSummary, logPre);
   log.hidden = true;
 
-  root.append(row1, progress, errorBox, files, log);
-  return { root, refs: { badge, name, nodeChip, time, progress, stage, pct, fill, errorBox, log, logPre, files }, filesSig: "", lastLog: null };
+  root.append(row1, progress, errorBox, files, actions, log);
+  return { root, refs: { badge, name, nodeChip, time, progress, stage, pct, fill, errorBox, log, logPre, files, actions, archive }, filesSig: "", lastLog: null };
 }
 
 function updateJobEl(entry, job) {
@@ -1383,6 +1510,31 @@ function updateJobEl(entry, job) {
     refs.files.hidden = false;
   } else {
     refs.files.hidden = true;
+  }
+
+  // arquivar: sobe para o acervo e libera a máquina. Vai para o nó que rodou o
+  // job (é lá que os arquivos estão), não para o selecionado no topo.
+  const owner = nodeById(job.node);
+  const canArchive = job.status === "done" && filesArr.length && owner && owner.online;
+  refs.actions.hidden = !canArchive;
+  if (canArchive) {
+    refs.archive.disabled = false;
+    refs.archive.textContent = "enviar para o acervo";
+    refs.archive.onclick = () => archiveJob(job, refs.archive, owner);
+  }
+}
+
+async function archiveJob(job, btn, node) {
+  btn.disabled = true;
+  btn.textContent = "enviando…";
+  try {
+    await fetchJSON(node.base, `/api/jobs/${encodeURIComponent(job.id)}/archive`, { method: "POST" });
+    pollJobs();  // o job some da lista da máquina...
+    pollFiles(); // ...e aparece no acervo
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = "falhou — tentar de novo";
+    btn.title = e.message || "falha ao arquivar";
   }
 }
 

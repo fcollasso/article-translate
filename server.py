@@ -652,6 +652,107 @@ def download(job_id: str, name: str, exp: int = 0, sig: str = ""):
 
 
 JOB_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
+# nome de arquivo é digitado à mão: fora barras, controles e afins, deixa passar
+# acento e espaço — quem vai ler é o Felipe, não o sistema de arquivos
+UNSAFE_NAME_RE = re.compile(r"[^\w \-.()\[\]À-ÿ]", re.UNICODE)
+
+
+def clean_base_name(raw: str) -> str:
+    name = UNSAFE_NAME_RE.sub("", (raw or "").strip())
+    return re.sub(r"\s+", " ", name).strip(" .")[:120]
+
+
+def split_suffix(name: str) -> str:
+    """O sufixo é o que identifica o arquivo no site ('PDF traduzido', 'bilíngue',
+    'Glossário'), então renomear preserva ele e mexe só no nome-base."""
+    for suffix, _ in FILE_LABELS:
+        if name.endswith(suffix):
+            return suffix
+    return Path(name).suffix
+
+
+def r2_job_keys(job_id: str) -> list[dict]:
+    keys = []
+    for page in r2().get_paginator("list_objects_v2").paginate(
+            Bucket=R2_BUCKET, Prefix=f"jobs/{job_id}/"):
+        keys += page.get("Contents", [])
+    return keys
+
+
+@app.post("/api/jobs/{job_id}/archive")
+def archive_job(job_id: str) -> dict:
+    """Sobe as saídas do job para o R2 e some com ele desta máquina.
+
+    A ordem importa: só apaga depois que TODOS os arquivos subiram. Falha no meio
+    deixa tudo como estava, para arquivar nunca virar perda de tradução."""
+    if not JOB_ID_RE.fullmatch(job_id):
+        raise HTTPException(400, detail="identificador de trabalho inválido")
+    if not R2_ENABLED:
+        raise HTTPException(503, detail="R2 não configurado nesta máquina")
+    with closing(db()) as conn:
+        row = conn.execute("SELECT status, files FROM jobs WHERE id=?", (job_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, detail="Trabalho não encontrado")
+    if row["status"] != "done":
+        raise HTTPException(400, detail="só dá para arquivar trabalho concluído")
+
+    files = json.loads(row["files"])
+    try:
+        for f in files:
+            if f.get("key"):
+                continue
+            path = job_out_dir(job_id) / f["name"]
+            if not path.is_file():
+                raise HTTPException(409, detail=f"arquivo sumiu do disco: {f['name']}")
+            key = f"jobs/{job_id}/{f['name']}"
+            content_type = "application/pdf" if f["name"].endswith(".pdf") else "text/csv"
+            r2().upload_file(str(path), R2_BUCKET, key, ExtraArgs={"ContentType": content_type})
+            f["key"] = key
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(502, detail=f"falha ao subir para o R2: {exc}")
+
+    with closing(db()) as conn, conn:
+        conn.execute("DELETE FROM jobs WHERE id=?", (job_id,))
+    for path in (job_out_dir(job_id), UPLOADS_DIR / job_id):
+        if path.is_dir():
+            shutil.rmtree(path, ignore_errors=True)
+    return {"archived": len(files)}
+
+
+@app.post("/api/files/{job_id}/name")
+async def rename_files(job_id: str, request: Request) -> dict:
+    """Troca o nome-base dos arquivos de um job no R2. Renomear em S3 é cópia +
+    remoção, mas a cópia é do lado do servidor: o conteúdo não trafega."""
+    if not JOB_ID_RE.fullmatch(job_id):
+        raise HTTPException(400, detail="identificador de trabalho inválido")
+    if not R2_ENABLED:
+        raise HTTPException(503, detail="R2 não configurado nesta máquina")
+    body = await request.json()
+    base = clean_base_name(body.get("name", "") if isinstance(body, dict) else "")
+    if not base:
+        raise HTTPException(400, detail="nome vazio ou só com caracteres inválidos")
+
+    try:
+        objects = r2_job_keys(job_id)
+        if not objects:
+            raise HTTPException(404, detail="nada no acervo para este trabalho")
+        renamed = []
+        for obj in objects:
+            old = obj["Key"]
+            new = f"jobs/{job_id}/{base}{split_suffix(old.rsplit('/', 1)[-1])}"
+            if new == old:
+                renamed.append(old)
+                continue
+            r2().copy_object(Bucket=R2_BUCKET, CopySource={"Bucket": R2_BUCKET, "Key": old}, Key=new)
+            r2().delete_object(Bucket=R2_BUCKET, Key=old)
+            renamed.append(new)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(502, detail=f"falha ao renomear no R2: {exc}")
+    return {"name": base, "files": [k.rsplit("/", 1)[-1] for k in renamed]}
 
 
 @app.delete("/api/files/{job_id}")
