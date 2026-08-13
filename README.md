@@ -91,15 +91,31 @@ Em modelos Qwen3, desative o modo "thinking" para tradução (no LM Studio ou co
 
 Frontend web com login por token, fila de jobs, progresso e métricas ao vivo:
 
+Três peças. O **hub** roda na VPS e é a única que precisa estar sempre ligada: ele
+serve a página e o acervo (lido direto do R2). As **máquinas** só traduzem, e você
+escolhe no site em qual rodar:
+
 ```
 navegador → traduzia.com.br → nginx na VPS (TLS, bloqueia /llmproxy)
-                                  ↓ Tailscale
-                          desktop: Docker [server.py + SQLite]
-                                  ↓ host.docker.internal
-                          LM Studio (RTX 3050) — inferência
+                                  │
+              ┌───────────────────┼───────────────────┐
+        /  e  /api/hub/      /n/desktop/          /n/mac/
+              │                   └──── Tailscale ────┘
+    hub (container na VPS)      Docker [server.py + SQLite] × 2
+      página + acervo do R2          ↓ host.docker.internal
+              │                  LM Studio (RTX 3050 / M5 Pro)
+              ↓
+      Cloudflare R2 ←──── os nós sobem as saídas para cá
 
-downloads: navegador → Cloudflare R2 (URL pré-assinada, sem passar pelo túnel)
+downloads: navegador → R2 (URL pré-assinada, sem passar pelo túnel)
 ```
+
+Com desktop e Mac desligados o site **abre normalmente**, você entra e baixa o que
+já foi traduzido — só não dá para enviar artigo novo, porque a tradução vive nas
+máquinas.
+
+O nginx remove o prefixo `/n/<id>/` antes de repassar, então o backend é o mesmo
+código nas duas máquinas — o que muda é só o `NODE_ID` do compose.
 
 No desktop:
 
@@ -108,39 +124,55 @@ docker compose up -d --build
 docker compose exec traduzia python server.py token create felipe   # imprime o token 1x
 ```
 
-- Tokens e jobs ficam em SQLite (volume `traduzia-data`); gerencie com `token list` / `token revoke <nome>`.
-- R2 é opcional: preencha `R2_*` no `.env` (seção no `.env.example`); sem ele os arquivos são servidos do desktop com URL assinada.
+No Mac (mesmo repo, compose próprio — sem `gpus: all`):
+
+```bash
+docker compose -f docker-compose.mac.yml up -d --build
+# o MESMO token do desktop, para não precisar trocar de token ao trocar de máquina:
+docker compose -f docker-compose.mac.yml exec traduzia \
+  python server.py token create felipe --token <token do desktop>
+```
+
+Na VPS (o hub — página e acervo):
+
+```bash
+# o hub só aceita o hash do token, nunca o token em si
+docker run --rm hub-hub:latest python hub.py hash <o mesmo token>
+
+# preencha HUB_TOKEN_HASHES e as R2_* (leitura basta) num .env ao lado do compose
+docker compose -f deploy/hub/docker-compose.yml up -d --build
+```
+
+O hub precisa estar na **mesma rede Docker do quark-nginx** para o vhost alcançá-lo
+pelo nome do container; confira o nome da rede com
+`docker inspect quark-nginx -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}'`
+e ajuste `QUARK_NETWORK` se não for `quark_default`.
+
+- Cada máquina tem **fila, banco e LM Studio próprios**: nada é compartilhado entre elas além do bucket R2. A lista de trabalhos no site junta as duas, com etiqueta de qual rodou o quê.
+- Tokens e jobs ficam em SQLite (volume `traduzia-data`); gerencie com `token list` / `token revoke <nome>`. O token é **por máquina** — use `--token` para replicar o mesmo valor na outra, e o hash dele no hub. Revogar de verdade = revogar nos três lugares.
+- R2 é o que sustenta o acervo: preencha `R2_*` no `.env` das duas máquinas (seção no `.env.example`). Sem ele tudo continua funcionando, mas os downloads passam pelo túnel e o acervo do site fica indisponível com os PCs desligados.
 - O vhost do nginx da VPS está versionado em `deploy/nginx/traduzia.conf`; o passo a passo do deploy está no `ESTADO.md`.
 - Sem Docker (`.venv/bin/python server.py`) também funciona, mas exige `pip install boto3`, `FRONTEND_HOST=0.0.0.0` e portproxy do Windows→WSL — o Docker Desktop publica a porta no Windows sozinho.
+- Aberto direto na máquina (`http://localhost:8010`) o site funciona igual, só sem o seletor: sem o nginx na frente não existe prefixo `/n/`, e o frontend entra em modo de máquina única.
 
-### Subir em outra máquina (do zero)
+### Subir uma máquina nova (do zero)
 
-Duas coisas **não vêm no clone** e precisam ser providenciadas na máquina nova: o `.env` (está no `.gitignore`) e o LM Studio com o modelo.
+Duas coisas **não vêm no clone** e precisam ser providenciadas: o `.env` (está no `.gitignore`) e o LM Studio com o modelo.
 
-1. **Clonar o repo e copiar o `.env`** da máquina antiga para a raiz do projeto (backend padrão, modelo, `LOCAL_QPS`/`LOCAL_WORKERS`, credenciais do R2).
-2. **LM Studio no Windows** (a inferência roda fora do container):
+1. **Clonar o repo e copiar o `.env`** de outra máquina (backend padrão, modelo, `LOCAL_QPS`/`LOCAL_WORKERS`, credenciais do R2). Ajuste `LOCAL_MODEL` para o id exato que o LM Studio de lá expõe.
+2. **LM Studio** (a inferência roda fora do container):
    - Baixar o modelo `qwen/qwen3-8b` (GGUF Q4_K_M, ~5 GB)
    - Subir o servidor aceitando conexões externas — senão o container não alcança:
      ```
-     lms server start --bind 0.0.0.0
+     lms server start --bind 0.0.0.0        # no Mac: "Serve on Local Network" nas configurações
      ```
    - Carregar o modelo com `-c 8192 --parallel 2` (config validada para 8 GB de VRAM)
-3. **Subir o container** (Docker Desktop com integração WSL2):
-   ```bash
-   docker compose up -d --build
-   ```
-   O compose já aponta para o LM Studio via `host.docker.internal:1234` — não precisa mexer em IP.
-4. **Criar o token de acesso** (o frontend exige):
-   ```bash
-   docker compose exec traduzia python server.py token create felipe
-   ```
+3. **Subir o container**: `docker compose up -d --build` no desktop, `docker compose -f docker-compose.mac.yml up -d --build` no Mac. O compose já aponta para o LM Studio via `host.docker.internal:1234` — não precisa mexer em IP.
+4. **Criar o token de acesso** (o frontend exige) — veja acima.
 
 Depois é só abrir `http://localhost:8010`.
 
-Observações:
-- Máquina **sem GPU NVIDIA**: remova `gpus: all` do `docker-compose.yml` (só perde os gráficos de GPU no painel) — mas o LM Studio vai precisar de GPU razoável para o Qwen 8B render.
-- Os jobs/tokens ficam no volume `traduzia-data`, que começa zerado na máquina nova.
-- Para a máquina nova assumir o traduzia.com.br: instalar o Tailscale nela e atualizar o IP no vhost do nginx da VPS (`deploy/nginx/traduzia.conf`).
+Para a máquina entrar no traduzia.com.br: instalar o Tailscale nela, pegar o IP `100.x` e apontar o `location /n/<id>/` correspondente no vhost do nginx da VPS (`deploy/nginx/traduzia.conf`). Uma máquina nova (um terceiro nó) precisa também entrar na constante `NODES` do `frontend/index.html`.
 
 ## Solução de problemas
 

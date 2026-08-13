@@ -8,4 +8,6 @@ uploads
 data
 design-system
 deploy
+# exceção: a imagem do hub é buildada a partir da raiz e precisa do próprio código
+!deploy/hub
 *.md

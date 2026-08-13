@@ -1,6 +1,128 @@
 # ESTADO.md — tradutor-artigos
 
-## Sessão atual: 2026-07-22 (qualidade da saída — alinhamento e palavras coladas)
+## Sessão atual: 2026-08-13 (dois nós + hub na VPS)
+
+### Decisão 2 (mesma sessão, depois): o frontend sai dos PCs e vai para a VPS
+Proposta do Felipe, e melhor que o desenho anterior. Antes, a página era servida por
+um dos PCs (upstream com failover): o site morria com as duas máquinas desligadas e o
+frontend precisava ser rebuildado nas duas — defeito que apareceu na prática, quando o
+seletor não aparecia porque a imagem do Mac tinha o `server.py` novo e o `index.html`
+velho.
+
+Agora são **três peças**, e a VPS é a única que precisa estar ligada:
+```
+/  e /api/hub/  → hub (container na VPS): serve a página e o acervo lido do R2
+/n/desktop/     → 100.98.187.95:8010   ┐ só a tradução (fila, pdf2zh, LM Studio)
+/n/mac/         → 100.67.176.89:8010   ┘
+```
+Com os dois PCs desligados: o site abre, o login passa (o hub confere o token) e dá
+para baixar tudo que já foi traduzido. Só não dá para **enviar** artigo novo.
+
+Limite conhecido e aceito: a *lista de jobs* (com progresso, erro e log) continua vindo
+dos nós — com tudo desligado você vê o acervo, não o histórico de execução. Espelhar
+isso na VPS foi considerado e descartado por complexidade.
+
+- `deploy/hub/` (novo): `hub.py` (FastAPI ~200 linhas) + Dockerfile + compose. Guarda só
+  o **hash** do token (`HUB_TOKEN_HASHES`); credenciais R2 de leitura bastam ali.
+- `frontend/index.html`: login passa pelo hub, seção "Acervo" (R2), dropzone avisa quando
+  não há máquina ligada.
+- `deploy/nginx/traduzia.conf`: reescrito para as três peças; o upstream com failover saiu.
+  O hub é alcançado pelo **nome do container** — exige o hub na mesma rede Docker do
+  quark-nginx (`QUARK_NETWORK`, default `quark_default` — **confirmar na VPS**).
+
+### Decisão
+O Mac volta a rodar inferência e vira o **segundo nó** do traduzia. Cada máquina roda o
+backend inteiro (fila, banco e LM Studio próprios) e o site escolhe onde traduzir — com
+uma desligada, a outra atende sozinha. Alternativa descartada: o Mac servir só de GPU
+remota para o desktop, que continuaria orquestrando (mais simples, mas o site inteiro
+continuaria caindo com o desktop desligado). Instalação via Docker, para paridade de
+versões com o desktop.
+
+Isso reverte parcialmente a decisão de 2026-07-14 ("não usar o Mac para inferência"):
+aquilo era sobre o **Qwen3 14B**, que consumia a máquina inteira; o Qwen3 8B Q4 são ~5 GB
+e cabem folgados nos 24 GB. Se atrapalhar, é só não escolher o Mac no seletor.
+
+### Arquitetura
+O nginx da VPS vira o roteador — é o único componente sempre ligado:
+```
+/                → upstream com failover (desktop; mac como backup)
+/n/desktop/…     → 100.98.187.95:8010   via Tailscale
+/n/mac/…         → <IP_DO_MAC>:8010     via Tailscale
+/llmproxy/ e /n/<id>/llmproxy/ → 403
+```
+O `proxy_pass` termina em `/`, então o prefixo é removido antes do repasse: o backend não
+sabe em que caminho é servido e o código é **idêntico** nos dois nós. `traduzir.py` não
+mudou nada.
+
+### Feito (código, testado no Mac)
+- `server.py`: `GET /node` sem auth (`{id, label, gpu}`) como identidade + probe de saúde;
+  `has_gpu()` cacheado (o probe roda a cada poucos segundos, não pode chamar `nvidia-smi`
+  toda vez); `NODE_ID`/`NODE_LABEL` via `cfg()`; `token create <nome> --token <valor>` para
+  registrar o **mesmo** token nas duas máquinas (continua só como hash).
+- `frontend/index.html`: roster de nós + probe a cada 15s, seletor "rodar em" no topo do
+  upload, base path por nó em todo fetch, **lista de jobs unificada** (as duas máquinas,
+  com etiqueta), métricas do nó selecionado, URLs de download prefixadas quando relativas
+  (a do R2 é absoluta e passa direto), cards de GPU escondidos em nó sem NVIDIA, e
+  **auth por nó**: 401 de uma máquina marca só ela como "sem acesso" — só volta ao login
+  quando nenhuma máquina no ar aceita o token. Sem o nginx na frente (localhost:8010) cai
+  em modo de máquina única automaticamente.
+- `docker-compose.mac.yml` (sem `gpus: all`, `NODE_ID=mac`); `NODE_ID=desktop` no compose
+  do desktop; `deploy/nginx/traduzia.conf` reescrito; `.env.example`, README e CLAUDE.md.
+
+### Setup do Mac (feito nesta sessão)
+- Tailscale autorizado: **100.67.176.89** (o do desktop segue 100.98.187.95).
+- LM Studio instalado, CLI bootstrapado, `qwen/qwen3-8b@q4_k_m` **GGUF** baixado (5.03 GB).
+  GGUF e não MLX de propósito: o id exposto fica `qwen/qwen3-8b`, **igual ao do desktop**,
+  então o mesmo `LOCAL_MODEL` serve nas duas. Servidor com `--bind 0.0.0.0` e
+  `-c 8192 --parallel 2`. MLX fica como ideia futura se o tempo incomodar.
+- Imagem arm64 (2.45 GB) monta sem compilar nada: todas as deps com C-extension
+  (`onnxruntime`, `onnx`, `opencv-headless`, `pymupdf`, `rtree`, `scipy`) têm wheel
+  `manylinux aarch64`. Era o principal risco da decisão pelo Docker.
+
+### Tradução real no Mac: funciona, mas é lenta
+`2511.15247.pdf` (16 págs) traduzido ponta a ponta pelo nó Mac: mono 4,8 MB + dual
+8,7 MB + glossário. Valida pdf2zh, DocLayout-YOLO, o patch de justificação e o LM
+Studio local em arm64.
+
+**78,4 min**, contra ~14,8 min do desktop no mesmo artigo. Não é o modelo: o Mac faz
+~40 tok/s por requisição contra ~12 do desktop. O peso está na **extração automática
+de termos**, que sozinha passou de 20 min (629/821 em 21:53 numa amostra). A
+investigar antes de adotar o Mac como principal — suspeitas: cache frio (o desktop já
+tinha rodado esse artigo) e/ou `--parallel 2` estreito demais para os 24 GB unificados.
+
+### Outros testes que passaram
+- `/node` → `{"id":"mac","label":"MacBook M5 Pro","gpu":false}` (detectou a ausência de
+  GPU sozinho); `/api/*` 401 sem token; token replicado com `--token` aceito.
+- **Topologia completa local** (nginx com o vhost real + hub + MinIO + o nó Mac), com o
+  desktop simulado desligado: `/` servido pelo hub, `/api/hub/files` listando o bucket,
+  `/n/mac/…` ok, `/n/desktop/…` → 502, `/n/mac/llmproxy/…` → 403 (a regex tinha que vir
+  antes, senão o caminho novo furava o bloqueio).
+- **R2 validado sem credenciais reais**, contra um MinIO local (daí o override
+  `R2_ENDPOINT` no hub): listagem agrupada por job, URL assinada baixando de verdade com
+  `Content-Disposition` correto, URL adulterada → 403.
+- **JS do frontend rodado de verdade** em Node com DOM mínimo contra essa topologia, em
+  4 modos: site (17 asserções), **offline** (as duas máquinas caídas: não desloga e o
+  acervo funciona), token válido só numa máquina, e modo direto. Todos ok. (Harness ficou
+  no scratchpad da sessão, não foi versionado — vale portar para o repo algum dia.)
+
+### Pendências (nesta ordem)
+1. **R2**: Felipe criou um bucket novo; falta preencher `R2_*` no `.env` das duas máquinas
+   (campos já preparados) e no ambiente do hub. Sugerido: token R/W para os PCs, token só
+   de leitura para o hub (é a peça exposta na internet).
+2. **Rebuild do nó Mac** — a imagem que está rodando tem o `index.html` antigo (o build
+   correu antes das mudanças do frontend). Adiado a pedido do Felipe.
+3. **Desktop**: `git pull` + `docker compose up -d --build`. Enquanto não fizer, ele
+   responde 404 em `/node` e aparece como offline no seletor (confirmado por curl).
+4. **VPS**: subir o hub (`deploy/hub/`), **confirmar o nome da rede Docker do quark**
+   (`QUARK_NETWORK`, default `quark_default`) e aplicar o vhost novo.
+5. Token: replicar o mesmo valor nas duas máquinas (`--token`) e o hash no hub.
+6. Conferência visual da UI no navegador — feita só por código até agora; o Felipe vai
+   testar pelo site.
+7. Investigar a lentidão da extração de termos no Mac.
+
+---
+
+## Sessão: 2026-07-22 (qualidade da saída — alinhamento e palavras coladas)
 
 ### Diagnóstico (artigo 2601.13956v1, traduzido no desktop com qwen3-8b)
 - "Sem indentação" = **justificação perdida**: o typesetter do BabelDOC (0.6.2) re-diagrama

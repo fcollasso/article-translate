@@ -1,0 +1,32 @@
+# Nó "mac" do traduzia — MacBook M5 Pro (Docker Desktop para Mac, imagem arm64).
+#
+#   docker compose -f docker-compose.mac.yml up -d --build
+#   docker compose -f docker-compose.mac.yml exec traduzia \
+#       python server.py token create felipe --token <token do desktop>
+#
+# Difere do docker-compose.yml (desktop) em dois pontos: NODE_ID=mac e nada de
+# `gpus: all` — não existe GPU NVIDIA aqui, então o painel do site esconde os
+# gráficos de GPU neste nó (tok/s continua funcionando, vem do /llmproxy).
+# A inferência roda fora do container, no LM Studio do macOS, que precisa estar
+# com "Serve on Local Network" ligado para host.docker.internal alcançá-lo.
+services:
+  traduzia:
+    build: .
+    container_name: traduzia
+    restart: unless-stopped
+    ports:
+      - "8010:8010"
+    environment:
+      - NODE_ID=mac
+      - NODE_LABEL=MacBook M5 Pro
+      - LOCAL_BASE_URL=http://host.docker.internal:1234/v1
+    volumes:
+      - ./.env:/app/.env:ro
+      - ./uploads:/app/uploads
+      - ./output:/app/output
+      - traduzia-data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  traduzia-data:

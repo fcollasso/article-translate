@@ -145,7 +145,44 @@
   }
   .offline .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--red); flex: none; }
 
-  .stale > *:not(.sec-label):not(.metrics-toggle) { opacity: .55; transition: opacity .3s; }
+  .stale > *:not(.sec-label):not(.metrics-toggle):not(.node-pick) { opacity: .55; transition: opacity .3s; }
+
+  /* seletor de máquina — segmented control no idioma das pills do header */
+  .node-pick { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+  .node-pick .lbl { font-family: var(--mono); font-size: 12px; color: var(--text-3); }
+  .node-group { display: flex; gap: 6px; flex-wrap: wrap; }
+  .node-btn {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 13px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--text-2);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: border-color .15s, color .15s, background .15s;
+  }
+  .node-btn:hover:not(:disabled) { border-color: var(--border-strong); color: var(--text); }
+  .node-btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  .node-btn:disabled { cursor: not-allowed; opacity: .5; }
+  .node-btn .st { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex: none; }
+  .node-btn.off .st { background: var(--red); }
+  .node-btn.noauth .st { background: var(--amber); }
+  /* etiqueta da máquina em cada job da lista unificada */
+  .job-node {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1px 6px;
+    flex: none;
+  }
 
   /* ============================================================
      Dropzone
@@ -194,6 +231,22 @@
      ============================================================ */
   #jobs-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
   #jobs-empty { margin: 0; font-size: 13.5px; color: var(--text-3); }
+
+  /* acervo (R2) — mesma linguagem dos cards de job, um pouco mais discreto */
+  #files-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+  #files-empty, .acervo-note { margin: 0 0 12px; font-size: 13px; color: var(--text-3); }
+  .acervo {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px 18px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+  }
+  .acervo-head { display: flex; align-items: baseline; gap: 10px; font-size: 13px; }
+  .acervo-head .id { font-family: var(--mono); font-size: 11.5px; color: var(--text-3); }
+  .acervo-head .when { margin-left: auto; font-size: 12px; color: var(--text-3); }
 
   .job {
     display: flex;
@@ -475,17 +528,21 @@
 
     <div class="offline" id="offline-banner" hidden>
       <span class="dot"></span>
-      backend indisponível — tentando reconectar automaticamente…
+      <span id="offline-text">backend indisponível — tentando reconectar automaticamente…</span>
     </div>
 
     <!-- ==================== Upload ==================== -->
     <section id="upload-section">
+      <div class="node-pick" id="node-pick" hidden>
+        <span class="lbl">rodar em</span>
+        <div class="node-group" id="node-group" role="group" aria-label="Máquina que vai traduzir"></div>
+      </div>
       <input type="file" id="file-input" accept=".pdf" multiple hidden>
       <div id="dropzone" role="button" tabindex="0"
            aria-label="Enviar PDF para tradução. Arraste um arquivo ou pressione Enter para escolher.">
         <div class="dz-icon"><span>↑</span></div>
         <div class="dz-title">Arraste um PDF aqui</div>
-        <div class="dz-sub">ou clique para escolher — o artigo entra na fila de tradução</div>
+        <div class="dz-sub" id="dz-sub">ou clique para escolher — o artigo entra na fila de tradução</div>
       </div>
       <div id="upload-msg" hidden></div>
     </section>
@@ -497,11 +554,26 @@
       <p id="jobs-empty">Nenhum trabalho ainda — arraste um PDF acima para começar.</p>
     </section>
 
+    <!-- ============ Acervo: tudo que já foi traduzido, vindo do R2 ============ -->
+    <section id="files-section" hidden>
+      <button class="metrics-toggle" id="files-toggle" type="button" aria-expanded="false" aria-controls="files-body">
+        <span class="chev">▶</span>
+        Acervo
+        <span class="hint" id="files-hint"></span>
+      </button>
+      <div id="files-body" hidden>
+        <p class="acervo-note">Guardado no servidor — continua disponível com as máquinas desligadas.</p>
+        <ol id="files-list"></ol>
+        <p id="files-empty">Nada no acervo ainda.</p>
+      </div>
+    </section>
+
     <!-- ==================== Métricas do modelo ==================== -->
     <section id="metrics-section">
       <button class="metrics-toggle open" id="metrics-toggle" type="button" aria-expanded="true" aria-controls="metrics-body">
         <span class="chev">▶</span>
         Métricas do modelo
+        <span class="hint" id="metrics-node"></span>
         <span class="hint" id="metrics-hint"></span>
       </button>
 
@@ -553,19 +625,19 @@
             <div class="sub" id="c-speed-sub">média da sessão: —</div>
             <div class="spark" id="spark-speed"><div class="nodata">sem dados ainda</div></div>
           </div>
-          <div class="card chart">
+          <div class="card chart" id="card-gpu">
             <div class="head"><span class="chip" style="background:var(--green)"></span>Utilização da GPU</div>
             <div class="valrow"><span class="value" id="c-gpu">—</span><span class="unit">%</span></div>
             <div class="sub" id="c-gpu-sub">RTX 3050</div>
             <div class="spark" id="spark-gpu"><div class="nodata">sem dados ainda</div></div>
           </div>
-          <div class="card chart">
+          <div class="card chart" id="card-vram">
             <div class="head"><span class="chip" style="background:var(--purple)"></span>VRAM</div>
             <div class="valrow"><span class="value" id="c-vram">—</span><span class="unit">MiB</span></div>
             <div class="sub" id="c-vram-sub">de — MiB</div>
             <div class="spark" id="spark-vram"><div class="nodata">sem dados ainda</div></div>
           </div>
-          <div class="card chart">
+          <div class="card chart" id="card-temp">
             <div class="head"><span class="chip" style="background:var(--amber)"></span>Temperatura</div>
             <div class="valrow"><span class="value" id="c-temp">—</span><span class="unit">°C</span></div>
             <div class="sub">limite: 83 °C</div>
@@ -616,6 +688,12 @@ function fmtHM(epoch) {
   return new Date(epoch * 1000).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
 
+function fmtDate(epoch) {
+  if (!isNum(epoch)) return "—";
+  return new Date(epoch * 1000).toLocaleString("pt-BR",
+    { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls) => {
   const n = document.createElement(tag);
@@ -642,31 +720,187 @@ $("theme-label").textContent = document.body.dataset.theme === "light" ? "escuro
 let TOKEN = "";
 try { TOKEN = localStorage.getItem("traduzai.token") || ""; } catch (e) { /* ok */ }
 
+/* Máquinas conhecidas. O nginx da VPS roteia /n/<id>/ para cada uma removendo o
+   prefixo, então cada nó é uma instância completa e independente do backend
+   (fila, banco e LM Studio próprios) — o site só escolhe para qual delas manda
+   o PDF. Aberto direto na máquina (localhost:8010) não existe prefixo: aí o
+   discoverNodes() cai no "modo direto", com um nó único de base vazia. */
+const NODES = [
+  { id: "desktop", label: "Desktop RTX 3050", base: "/n/desktop" },
+  { id: "mac",     label: "MacBook M5 Pro",   base: "/n/mac" },
+];
+
+/* O "hub" é a peça que roda no servidor (VPS) e está sempre no ar: serve esta
+   página e lista o acervo direto do R2. É por ele que o login passa, para o site
+   continuar utilizável com as duas máquinas desligadas. Abrindo direto num nó
+   (localhost:8010) o hub não existe e tudo volta a depender do próprio nó. */
+const HUB = "/api/hub";
+
 const state = {
   backendDown: null, // null = ainda sem contato; força o primeiro update do pill
+  hub: { available: false, r2: false },
+  files: [],
+  filesTimer: null,
+  nodes: [],         // {id, label, base, online, gpu, auth: "ok"|"denied"|null}
+  nodeId: null,      // máquina selecionada
+  pickerSig: null,
   jobs: [],
   metricsTimer: null,
   jobsTimer: null,
+  nodesTimer: null,
   hint: { tokS: null, gpu: null },
 };
 
+const nodeById = (id) => state.nodes.find((n) => n.id === id) || null;
+const selectedNode = () => nodeById(state.nodeId);
+const nodeBase = (id) => (nodeById(id) || {}).base || "";
+const multiNode = () => state.nodes.length > 1;
+
 /* ==============================================================
-   Conexão / banner offline
+   Máquinas — descoberta, probe de saúde e seletor
+   ============================================================== */
+async function probeNode(node) {
+  try {
+    const r = await fetch(node.base + "/node", { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const info = await r.json();
+    // o id do roster manda (é a rota); do backend aproveitamos nome e se tem GPU
+    if (info.label) node.label = info.label;
+    node.gpu = info.gpu !== false;
+    node.online = true;
+  } catch (e) {
+    node.online = false;
+  }
+}
+
+async function discoverNodes() {
+  const roster = NODES.map((n) => ({ ...n, online: false, gpu: true, auth: null }));
+  await Promise.all(roster.map(probeNode));
+  if (roster.some((n) => n.online)) return roster;
+  // Nenhum prefixo respondeu: ou estamos abertos direto na máquina (sem o nginx
+  // na frente) ou as duas caíram. Só vira "modo direto" se a raiz responder —
+  // senão é melhor mostrar as duas máquinas offline do que fingir que há uma só.
+  const solo = { id: "local", label: "esta máquina", base: "", online: false, gpu: true, auth: null };
+  await probeNode(solo);
+  return solo.online ? [solo] : roster;
+}
+
+function nodesSig() {
+  return state.nodes
+    .map((n) => [n.id, n.label, n.online ? 1 : 0, n.auth || "", n.id === state.nodeId ? 1 : 0].join(":"))
+    .join("|");
+}
+
+/** Rebuild só quando algo muda de verdade — o poll é de 2s e recriar os botões
+    a cada volta roubaria o foco do teclado. */
+function renderNodePicker() {
+  const sig = nodesSig();
+  if (sig === state.pickerSig) return;
+  state.pickerSig = sig;
+
+  $("node-pick").hidden = !multiNode();
+  const group = $("node-group");
+  group.innerHTML = "";
+  for (const n of state.nodes) {
+    const b = el("button", "node-btn");
+    b.type = "button";
+    b.setAttribute("aria-pressed", String(n.id === state.nodeId));
+    b.disabled = !n.online;
+    if (!n.online) {
+      b.classList.add("off");
+      b.title = "máquina desligada ou fora do alcance";
+    } else if (n.auth === "denied") {
+      b.classList.add("noauth");
+      b.title = "seu token não está cadastrado nesta máquina";
+    }
+    b.append(el("span", "st"), document.createTextNode(n.label));
+    b.addEventListener("click", () => selectNode(n.id));
+    group.append(b);
+  }
+  $("metrics-node").textContent = multiNode() && selectedNode() ? "· " + selectedNode().label : "";
+
+  // sem máquina ligada não dá para traduzir — mas o acervo continua acessível
+  const anyOnline = state.nodes.some((n) => n.online);
+  $("dz-sub").textContent = anyOnline
+    ? "ou clique para escolher — o artigo entra na fila de tradução"
+    : "nenhuma máquina ligada — só dá para baixar do acervo agora";
+}
+
+function selectNode(id) {
+  if (state.nodeId === id) return;
+  state.nodeId = id;
+  try { localStorage.setItem("traduzai.node", id); } catch (e) { /* ok */ }
+  state.backendDown = null; // força o pill a se reavaliar para a máquina nova
+  renderNodePicker();
+  pollMetrics();
+}
+
+/** A máquina selecionada precisa existir e estar no ar; senão pula para outra
+    que esteja — o site tem que continuar utilizável com uma máquina só. */
+function ensureSelection() {
+  const cur = selectedNode();
+  if (cur && cur.online && cur.auth !== "denied") return;
+  const next = state.nodes.find((n) => n.online && n.auth !== "denied")
+            || state.nodes.find((n) => n.online)
+            || state.nodes[0];
+  if (next && next.id !== state.nodeId) {
+    state.nodeId = next.id;
+    state.backendDown = null;
+  }
+}
+
+async function refreshNodes() {
+  clearTimeout(state.nodesTimer);
+  if (document.hidden) return;
+  await Promise.all(state.nodes.map(probeNode));
+  ensureSelection();
+  renderNodePicker();
+  state.nodesTimer = setTimeout(refreshNodes, 15000);
+}
+
+async function probeHub() {
+  try {
+    const r = await fetch(HUB + "/node", { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const info = await r.json();
+    state.hub.available = true;
+    state.hub.r2 = info.r2 === true;
+  } catch (e) {
+    state.hub.available = false;
+    state.hub.r2 = false;
+  }
+}
+
+async function bootNodes() {
+  await probeHub();
+  state.nodes = await discoverNodes();
+  let saved = null;
+  try { saved = localStorage.getItem("traduzai.node"); } catch (e) { /* ok */ }
+  state.nodeId = saved && nodeById(saved) ? saved : null;
+  ensureSelection();
+  renderNodePicker();
+}
+
+/* ==============================================================
+   Conexão / banner offline (sempre sobre a máquina selecionada)
    ============================================================== */
 function setBackendDown(down) {
   if (state.backendDown === down) return;
   state.backendDown = down;
+  const n = selectedNode();
+  const who = multiNode() && n ? n.label : "backend";
   $("offline-banner").hidden = !down;
+  $("offline-text").textContent = `${who} indisponível — tentando reconectar automaticamente…`;
   $("conn-pill").classList.toggle("down", down);
-  $("conn-text").textContent = down ? "backend indisponível" : "backend conectado";
+  $("conn-text").textContent = down ? `${who} indisponível` : `${who} conectado`;
   $("jobs-section").classList.toggle("stale", down);
   $("metrics-section").classList.toggle("stale", down);
 }
 
-async function fetchJSON(url, opts = {}) {
+async function fetchJSON(base, path, opts = {}) {
   const headers = { ...(opts.headers || {}) };
   if (TOKEN) headers["Authorization"] = "Bearer " + TOKEN;
-  const r = await fetch(url, { ...opts, headers });
+  const r = await fetch(base + path, { ...opts, headers });
   let body = null;
   try { body = await r.json(); } catch { /* corpo não-JSON */ }
   if (!r.ok) {
@@ -678,8 +912,20 @@ async function fetchJSON(url, opts = {}) {
   return body;
 }
 
+/** Um 401 não derruba mais a sessão sozinho: com duas máquinas é normal o token
+    valer só numa delas. Só volta para o login quando nenhuma máquina no ar
+    aceita o token. Devolve true se a sessão foi encerrada. */
+function handleAuthFailure() {
+  const online = state.nodes.filter((n) => n.online);
+  if (online.length && online.every((n) => n.auth === "denied")) {
+    requireLogin("token inválido ou expirado — cole o token de novo.");
+    return true;
+  }
+  return false;
+}
+
 /* ==============================================================
-   Polling — métricas 2s; jobs 2s/10s adaptativo; pausa se oculto
+   Polling — métricas 2s (nó selecionado); jobs 2s/10s (todos os nós)
    ============================================================== */
 function hasActiveJobs() {
   return state.jobs.some((j) => j.status === "queued" || j.status === "running");
@@ -688,13 +934,27 @@ function hasActiveJobs() {
 async function pollMetrics() {
   clearTimeout(state.metricsTimer);
   if (document.hidden) return;
+  const n = selectedNode();
+  if (!n || !n.online) {
+    setBackendDown(true);
+    state.metricsTimer = setTimeout(pollMetrics, 2000);
+    return;
+  }
   try {
-    const m = await fetchJSON("/api/metrics");
+    const m = await fetchJSON(n.base, "/api/metrics");
+    n.auth = "ok";
     setBackendDown(false);
-    renderMetrics(m);
+    renderMetrics(m, n);
   } catch (e) {
-    if (e.httpStatus === 401) { requireLogin("token inválido ou expirado — cole o token de novo."); return; }
-    if (e.httpStatus === undefined) setBackendDown(true); // falha de rede
+    if (e.httpStatus === 401) {
+      n.auth = "denied";
+      renderNodePicker();
+      if (handleAuthFailure()) return;
+    } else if (e.httpStatus === undefined) {
+      n.online = false; // falha de rede: o probe confirma daqui a pouco
+      setBackendDown(true);
+      renderNodePicker();
+    }
   }
   state.metricsTimer = setTimeout(pollMetrics, 2000);
 }
@@ -702,25 +962,106 @@ async function pollMetrics() {
 async function pollJobs() {
   clearTimeout(state.jobsTimer);
   if (document.hidden) return;
-  try {
-    const data = await fetchJSON("/api/jobs");
-    setBackendDown(false);
-    state.jobs = Array.isArray(data.jobs) ? data.jobs : [];
-    renderJobs(state.jobs);
-  } catch (e) {
-    if (e.httpStatus === 401) { requireLogin("token inválido ou expirado — cole o token de novo."); return; }
-    if (e.httpStatus === undefined) setBackendDown(true);
+  const online = state.nodes.filter((n) => n.online);
+  if (!online.length) {
+    // sem contato com ninguém: mantém a última lista conhecida (já esmaecida
+    // pelo .stale) em vez de dizer que não existe trabalho nenhum
+    state.jobsTimer = setTimeout(pollJobs, 2000);
+    return;
   }
+  const batches = await Promise.all(online.map(async (n) => {
+    try {
+      const data = await fetchJSON(n.base, "/api/jobs");
+      n.auth = "ok";
+      return (Array.isArray(data.jobs) ? data.jobs : []).map((j) => ({ ...j, node: n.id }));
+    } catch (e) {
+      if (e.httpStatus === 401) n.auth = "denied";
+      else if (e.httpStatus === undefined) n.online = false;
+      return [];
+    }
+  }));
+  renderNodePicker();
+  if (handleAuthFailure()) return;
+  // lista unificada: os jobs das duas máquinas, mais recentes primeiro
+  state.jobs = batches.flat()
+    .sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0))
+    .slice(0, 100);
+  renderJobs(state.jobs);
   state.jobsTimer = setTimeout(pollJobs, hasActiveJobs() ? 2000 : 10000);
 }
+
+/* ==============================================================
+   Acervo — arquivos do R2, servidos pelo hub (independe dos nós)
+   ============================================================== */
+let filesOpen = false;
+
+function setFilesOpen(open) {
+  filesOpen = open;
+  $("files-body").hidden = !open;
+  const btn = $("files-toggle");
+  btn.classList.toggle("open", open);
+  btn.setAttribute("aria-expanded", String(open));
+}
+
+function renderFiles(jobs) {
+  const list = $("files-list");
+  list.innerHTML = "";
+  for (const job of jobs) {
+    const li = el("li", "acervo");
+    const head = el("div", "acervo-head");
+    const id = el("span", "id");
+    id.textContent = job.id;
+    const when = el("span", "when");
+    when.textContent = fmtDate(job.modified);
+    head.append(id, when);
+
+    const files = el("div", "job-files");
+    for (const f of job.files || []) {
+      const a = el("a", "dl");
+      a.href = f.url; // URL assinada do R2: absoluta, não leva prefixo de nó
+      a.setAttribute("download", f.name || "");
+      const arrow = el("span", "arrow");
+      arrow.textContent = "↓";
+      const size = el("span", "size");
+      size.textContent = fmtBytes(f.size);
+      a.append(arrow, document.createTextNode(f.label || f.name || "arquivo"), size);
+      files.append(a);
+    }
+    li.append(head, files);
+    list.append(li);
+  }
+  $("files-empty").hidden = jobs.length > 0;
+  $("files-hint").textContent = jobs.length ? `· ${jobs.length}` : "";
+}
+
+async function pollFiles() {
+  clearTimeout(state.filesTimer);
+  if (document.hidden || !state.hub.available || !state.hub.r2) return;
+  try {
+    const data = await fetchJSON("", HUB + "/files");
+    state.files = Array.isArray(data.jobs) ? data.jobs : [];
+    $("files-section").hidden = false;
+    renderFiles(state.files);
+  } catch (e) {
+    if (e.httpStatus === 401) $("files-section").hidden = true;
+  }
+  // as URLs do R2 expiram em 1h; o poll de 1 min mantém os links sempre válidos
+  state.filesTimer = setTimeout(pollFiles, 60000);
+}
+
+$("files-toggle").addEventListener("click", () => setFilesOpen(!filesOpen));
 
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
     clearTimeout(state.metricsTimer);
     clearTimeout(state.jobsTimer);
+    clearTimeout(state.nodesTimer);
+    clearTimeout(state.filesTimer);
   } else if (TOKEN) {
+    refreshNodes();
     pollMetrics();
     pollJobs();
+    pollFiles();
   }
 });
 
@@ -745,21 +1086,33 @@ async function uploadFile(file) {
     showUploadMsg(`"${file.name}" não é um PDF — apenas arquivos .pdf são aceitos.`, "err");
     return;
   }
+  const node = selectedNode();
+  if (!node || !node.online) {
+    showUploadMsg("Nenhuma máquina disponível para traduzir agora.", "err");
+    return;
+  }
   showUploadMsg(`Enviando "${file.name}"…`, "info");
   const fd = new FormData();
   fd.append("file", file);
   try {
-    const res = await fetchJSON("/api/jobs", { method: "POST", body: fd });
-    showUploadMsg(`"${res.filename}" entrou na fila.`, "info");
+    const res = await fetchJSON(node.base, "/api/jobs", { method: "POST", body: fd });
+    const where = multiNode() ? ` em ${node.label}` : "";
+    showUploadMsg(`"${res.filename}" entrou na fila${where}.`, "info");
     setMetricsOpen(true); // handoff: abre métricas ao iniciar um job
     pollJobs(); // atualiza a lista imediatamente
   } catch (e) {
-    if (e.httpStatus === 401) { requireLogin("token inválido ou expirado — cole o token de novo."); return; }
+    if (e.httpStatus === 401) {
+      node.auth = "denied";
+      renderNodePicker();
+      if (handleAuthFailure()) return;
+      showUploadMsg(`Seu token não está cadastrado em ${node.label} — escolha outra máquina.`, "err");
+      return;
+    }
     const msg = e.httpStatus === undefined
-      ? "backend indisponível — não foi possível enviar o arquivo."
+      ? "máquina indisponível — não foi possível enviar o arquivo."
       : e.message;
     showUploadMsg(`Falha no envio de "${file.name}": ${msg}`, "err");
-    if (e.httpStatus === undefined) setBackendDown(true);
+    if (e.httpStatus === undefined) { node.online = false; setBackendDown(true); renderNodePicker(); }
   }
 }
 
@@ -789,7 +1142,10 @@ dropzone.addEventListener("drop", (e) => {
    Jobs — DOM persistente por id (Map): não reseta details/scroll
    ============================================================== */
 const jobsList = $("jobs-list");
-const jobEls = new Map(); // id -> { root, refs, filesSig, lastLog }
+const jobEls = new Map(); // "<nó>:<id>" -> { root, refs, filesSig, lastLog }
+
+// a lista junta as duas máquinas, então a chave do DOM precisa do nó junto
+const jobKey = (job) => (job.node || "") + ":" + job.id;
 
 const STATUS_META = {
   queued:  { label: "na fila",    cls: "b-queued" },
@@ -826,8 +1182,10 @@ function buildJobEl() {
   const row1 = el("div", "job-row1");
   const badge = el("span", "badge");
   const name = el("span", "job-name");
+  const nodeChip = el("span", "job-node");
+  nodeChip.hidden = true;
   const time = el("span", "job-time");
-  row1.append(badge, name, time);
+  row1.append(badge, name, nodeChip, time);
 
   const progress = el("div", "job-progress");
   const stageRow = el("div", "stage-row");
@@ -854,7 +1212,7 @@ function buildJobEl() {
   log.hidden = true;
 
   root.append(row1, progress, errorBox, files, log);
-  return { root, refs: { badge, name, time, progress, stage, pct, fill, errorBox, log, logPre, files }, filesSig: "", lastLog: null };
+  return { root, refs: { badge, name, nodeChip, time, progress, stage, pct, fill, errorBox, log, logPre, files }, filesSig: "", lastLog: null };
 }
 
 function updateJobEl(entry, job) {
@@ -866,6 +1224,9 @@ function updateJobEl(entry, job) {
   refs.badge.className = "badge " + meta.cls;
   refs.name.textContent = job.filename;
   refs.name.title = job.filename;
+  const jobNode = nodeById(job.node);
+  refs.nodeChip.hidden = !multiNode() || !jobNode;
+  if (jobNode) refs.nodeChip.textContent = jobNode.label;
   refs.time.textContent = timeInfo(job, now);
 
   // progresso (só job ativo)
@@ -911,7 +1272,10 @@ function updateJobEl(entry, job) {
   }
 
   // downloads (job concluído) — as URLs são assinadas e mudam a cada poll,
-  // então a assinatura do DOM usa nome+tamanho e só o href é re-apontado
+  // então a assinatura do DOM usa nome+tamanho e só o href é re-apontado.
+  // URL do R2 é absoluta e vai direto; a local é relativa à máquina que gerou
+  // o arquivo, então leva o prefixo daquele nó (/n/<id>/api/...).
+  const href = (f) => (f.url && f.url.startsWith("/") ? nodeBase(job.node) + f.url : f.url);
   const filesArr = Array.isArray(job.files) ? job.files : [];
   const sig = filesArr.map((f) => f.name + ":" + f.size).join("|");
   if (job.status === "done" && filesArr.length) {
@@ -919,7 +1283,7 @@ function updateJobEl(entry, job) {
       refs.files.innerHTML = "";
       for (const f of filesArr) {
         const a = el("a", "dl");
-        a.href = f.url;
+        a.href = href(f);
         a.setAttribute("download", f.name || "");
         const arrow = el("span", "arrow");
         arrow.textContent = "↓";
@@ -932,7 +1296,7 @@ function updateJobEl(entry, job) {
       entry.filesSig = sig;
     } else {
       const links = refs.files.querySelectorAll("a.dl");
-      filesArr.forEach((f, i) => { if (links[i]) links[i].href = f.url; });
+      filesArr.forEach((f, i) => { if (links[i]) links[i].href = href(f); });
     }
     refs.files.hidden = false;
   } else {
@@ -946,11 +1310,12 @@ function renderJobs(jobs) {
   const current = Array.from(jobsList.children);
 
   jobs.forEach((job, i) => {
-    seen.add(job.id);
-    let entry = jobEls.get(job.id);
+    const key = jobKey(job);
+    seen.add(key);
+    let entry = jobEls.get(key);
     if (!entry) {
       entry = buildJobEl();
-      jobEls.set(job.id, entry);
+      jobEls.set(key, entry);
       orderChanged = true;
     }
     if (current[i] !== entry.root) orderChanged = true;
@@ -958,10 +1323,10 @@ function renderJobs(jobs) {
   });
 
   if (orderChanged) {
-    for (const job of jobs) jobsList.append(jobEls.get(job.id).root);
+    for (const job of jobs) jobsList.append(jobEls.get(jobKey(job)).root);
   }
-  for (const [id, entry] of jobEls) {
-    if (!seen.has(id)) { entry.root.remove(); jobEls.delete(id); }
+  for (const [key, entry] of jobEls) {
+    if (!seen.has(key)) { entry.root.remove(); jobEls.delete(key); }
   }
   $("jobs-empty").hidden = jobs.length > 0;
 }
@@ -971,7 +1336,7 @@ setInterval(() => {
   const now = Date.now() / 1000;
   for (const job of state.jobs) {
     if (job.status !== "queued" && job.status !== "running") continue;
-    const entry = jobEls.get(job.id);
+    const entry = jobEls.get(jobKey(job));
     if (entry) entry.refs.time.textContent = timeInfo(job, now);
   }
 }, 1000);
@@ -1122,17 +1487,26 @@ function renderGPU(gpu) {
   setText("c-temp", isNum(gpu.temp_c) ? nf0.format(gpu.temp_c) : "—");
 }
 
-function renderMetrics(m) {
+function renderMetrics(m, node) {
+  // num nó sem GPU NVIDIA (o Mac) os três cards são escondidos, não zerados:
+  // ali não há dado nenhum para mostrar. tok/s continua, vem do /llmproxy.
+  const hasGpu = !node || node.gpu !== false;
+  $("card-gpu").hidden = !hasGpu;
+  $("card-vram").hidden = !hasGpu;
+  $("card-temp").hidden = !hasGpu;
+
   renderModel(m.model ?? null);
   renderLLM(m.llm ?? null);
-  renderGPU(m.gpu ?? null);
+  renderGPU(hasGpu ? (m.gpu ?? null) : null);
 
   const history = Array.isArray(m.history) ? m.history : [];
   const total = m.gpu && isNum(m.gpu.vram_total_mib) ? m.gpu.vram_total_mib : null;
   drawSpark("speed", history);
-  drawSpark("gpu", history);
-  drawSpark("vram", history, total ? [0, total] : null);
-  drawSpark("temp", history);
+  if (hasGpu) {
+    drawSpark("gpu", history);
+    drawSpark("vram", history, total ? [0, total] : null);
+    drawSpark("temp", history);
+  }
 
   $("metrics-hint").textContent = metricsHintText();
 }
@@ -1145,6 +1519,10 @@ function requireLogin(msg) {
   try { localStorage.removeItem("traduzai.token"); } catch (e) { /* ok */ }
   clearTimeout(state.metricsTimer);
   clearTimeout(state.jobsTimer);
+  clearTimeout(state.nodesTimer);
+  clearTimeout(state.filesTimer);
+  for (const n of state.nodes) n.auth = null;
+  $("files-section").hidden = true;
   $("logout-btn").hidden = true;
   $("login-err").textContent = msg || "";
   $("login-overlay").hidden = false;
@@ -1154,8 +1532,10 @@ function requireLogin(msg) {
 function enterApp() {
   $("login-overlay").hidden = true;
   $("logout-btn").hidden = false;
+  refreshNodes();
   pollMetrics();
   pollJobs();
+  pollFiles();
 }
 
 $("login-form").addEventListener("submit", async (e) => {
@@ -1166,15 +1546,55 @@ $("login-form").addEventListener("submit", async (e) => {
   btn.disabled = true;
   $("login-err").textContent = "";
   try {
-    const r = await fetch("/api/auth/check", { headers: { Authorization: "Bearer " + value } });
-    if (r.ok) {
+    // re-sonda antes de tentar: o probe periódico só roda depois do login, e o
+    // servidor ou uma máquina podem ter subido com a tela de login aberta
+    await probeHub();
+    await Promise.all(state.nodes.map(probeNode));
+
+    let detail = "";
+    // o hub (servidor) é a via principal: com ele no ar, dá para entrar e usar o
+    // acervo mesmo sem nenhuma máquina de tradução ligada
+    let hubOk = false;
+    if (state.hub.available) {
+      try {
+        const r = await fetch(HUB + "/auth/check", { headers: { Authorization: "Bearer " + value } });
+        hubOk = r.ok;
+        if (!r.ok) {
+          const body = await r.json().catch(() => null);
+          detail = body && body.detail ? body.detail : "";
+        }
+      } catch (err) { state.hub.available = false; }
+    }
+
+    // basta uma máquina aceitar o token para entrar; as que recusarem ficam
+    // marcadas no seletor em vez de barrar o acesso ao site inteiro
+    const online = state.nodes.filter((n) => n.online);
+    const oks = await Promise.all(online.map(async (n) => {
+      try {
+        const r = await fetch(n.base + "/api/auth/check", { headers: { Authorization: "Bearer " + value } });
+        n.auth = r.ok ? "ok" : "denied";
+        if (!r.ok && !detail) {
+          const body = await r.json().catch(() => null);
+          detail = body && body.detail ? body.detail : "";
+        }
+        return r.ok;
+      } catch (err) {
+        n.online = false;
+        return false;
+      }
+    }));
+    state.pickerSig = null; // o auth mudou; força o seletor a redesenhar
+    renderNodePicker();
+    if (hubOk || oks.some(Boolean)) {
       TOKEN = value;
       try { localStorage.setItem("traduzai.token", value); } catch (err) { /* ok */ }
       $("token-input").value = "";
+      ensureSelection();
       enterApp();
+    } else if (!state.hub.available && !online.length) {
+      $("login-err").textContent = "servidor e máquinas fora do ar — tente de novo em instantes.";
     } else {
-      const body = await r.json().catch(() => null);
-      $("login-err").textContent = body && body.detail ? body.detail : "token inválido";
+      $("login-err").textContent = detail || "token inválido";
     }
   } catch (err) {
     $("login-err").textContent = "backend indisponível — tente de novo em instantes.";
@@ -1188,7 +1608,10 @@ $("logout-btn").addEventListener("click", () => requireLogin());
 /* ==============================================================
    Início
    ============================================================== */
-if (TOKEN) enterApp(); else requireLogin();
+// descobre quais máquinas estão no ar antes de decidir entre app e login
+bootNodes().then(() => {
+  if (TOKEN) enterApp(); else requireLogin();
+});
 </script>
 </body>
 </html>

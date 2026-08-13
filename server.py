@@ -8,11 +8,16 @@ Rodar:
   docker compose up -d --build           # produção no desktop (0.0.0.0:8010)
 
 Tokens de acesso (a UI pede um token na entrada):
-  python server.py token create <nome>   # imprime o token UMA vez
+  python server.py token create <nome>                   # imprime o token UMA vez
+  python server.py token create <nome> --token <valor>   # registra o token da outra máquina
   python server.py token list
   python server.py token revoke <nome>
 
 Como funciona:
+  - Cada máquina (desktop, mac) roda uma instância completa e independente deste
+    servidor — fila, banco e LM Studio próprios. Quem junta as duas é o nginx da
+    VPS, que roteia /n/<NODE_ID>/ para cada uma removendo o prefixo; o frontend
+    descobre quem está no ar pelo GET /node e deixa escolher onde rodar o job.
   - Jobs e tokens ficam em SQLite (data/traduzai.db) — sobrevivem a restart.
   - Com R2_* configurado no .env, as saídas sobem para o R2 e os downloads
     viram URLs pré-assinadas servidas direto pela Cloudflare. Sem R2, os
@@ -66,6 +71,12 @@ LOCAL_BASE_URL = cfg("LOCAL_BASE_URL", "http://localhost:1234/v1").rstrip("/")
 LMSTUDIO_ROOT = LOCAL_BASE_URL.removesuffix("/v1")
 HOST = cfg("FRONTEND_HOST", "127.0.0.1")
 PORT = int(cfg("FRONTEND_PORT", "8010"))
+
+# Identidade deste nó. Cada máquina (desktop, mac) roda uma instância completa e
+# independente; quem junta as duas é o nginx da VPS, que roteia /n/<id>/ para cada
+# uma removendo o prefixo — por isso nada aqui precisa saber em que caminho é servido.
+NODE_ID = cfg("NODE_ID", "local")
+NODE_LABEL = cfg("NODE_LABEL") or NODE_ID
 
 DATA_DIR = SCRIPT_DIR / "data"
 DB_PATH = Path(cfg("DB_PATH", str(DATA_DIR / "traduzai.db")))
@@ -302,6 +313,18 @@ def read_gpu() -> dict | None:
                 "vram_total_mib": int(total), "temp_c": int(temp)}
     except Exception:
         return None
+
+
+_has_gpu: bool | None = None
+
+
+def has_gpu() -> bool:
+    """Cacheado: o /node é chamado como probe a cada poucos segundos por aba
+    aberta e não pode disparar um nvidia-smi de cada vez."""
+    global _has_gpu
+    if _has_gpu is None:
+        _has_gpu = read_gpu() is not None
+    return _has_gpu
 
 
 def read_model() -> dict | None:
@@ -562,6 +585,14 @@ def index() -> FileResponse:
     return FileResponse(FRONTEND_FILE, media_type="text/html")
 
 
+@app.get("/node")
+def node() -> dict:
+    """Identidade do nó + probe de saúde. Sem auth de propósito: o frontend
+    precisa saber quais máquinas estão no ar antes de haver um token na mão
+    (e para mostrar o nó como offline em vez de fingir que ele não existe)."""
+    return {"id": NODE_ID, "label": NODE_LABEL, "gpu": has_gpu()}
+
+
 @app.get("/api/auth/check")
 def auth_check(request: Request) -> dict:
     return {"ok": True, "name": request.state.token_name}
@@ -666,17 +697,25 @@ async def llm_proxy(path: str, request: Request) -> Response:
 def token_cli(args: list[str]) -> None:
     global DOWNLOAD_SECRET
     DOWNLOAD_SECRET = init_db()
-    usage = "uso: python server.py token {create <nome> | list | revoke <nome>}"
+    usage = ("uso: python server.py token {create <nome> [--token <valor>] | list | revoke <nome>}\n"
+             "  --token: registra um token existente em vez de sortear um novo — é assim que\n"
+             "           o mesmo token passa a valer nos dois nós (desktop e mac).")
     action = args[0] if args else ""
-    if action == "create" and len(args) == 2:
-        token = secrets.token_urlsafe(32)
+    if action == "create" and (len(args) == 2 or (len(args) == 4 and args[2] == "--token")):
+        given = args[3] if len(args) == 4 else ""
+        token = given or secrets.token_urlsafe(32)
         try:
             with closing(db()) as conn, conn:
                 conn.execute("INSERT INTO tokens (name, token_hash, created_at) VALUES (?, ?, ?)",
                              (args[1], hash_token(token), time.time()))
         except sqlite3.IntegrityError:
             sys.exit(f"[erro] já existe um token chamado {args[1]!r}")
-        print(f"Token criado ({args[1]}) — guarde agora, ele não será mostrado de novo:\n\n  {token}\n")
+        if given:
+            print(f"Token {args[1]!r} registrado neste nó ({NODE_ID}).")
+        else:
+            print(f"Token criado ({args[1]}) — guarde agora, ele não será mostrado de novo:\n\n  {token}\n"
+                  f"\nPara valer também na outra máquina, rode lá:\n"
+                  f"  python server.py token create {args[1]} --token {token}\n")
     elif action == "list":
         with closing(db()) as conn:
             rows = conn.execute("SELECT name, created_at, revoked_at FROM tokens ORDER BY created_at").fetchall()
@@ -727,7 +766,8 @@ def main() -> None:
     threading.Thread(target=sampler_loop, daemon=True).start()
     threading.Thread(target=worker_loop, daemon=True).start()
     r2_note = "R2 ativo" if R2_ENABLED else "R2 desativado (arquivos servidos localmente)"
-    print(f"Tradutor de Artigos: http://{HOST}:{PORT}  (LM Studio: {LOCAL_BASE_URL} | {r2_note})")
+    print(f"Tradutor de Artigos [nó: {NODE_ID}]: http://{HOST}:{PORT}  "
+          f"(LM Studio: {LOCAL_BASE_URL} | {r2_note})")
     uvicorn.run(app, host=HOST, port=PORT, log_level="warning")
 
 

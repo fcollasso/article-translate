@@ -1,4 +1,5 @@
-# Backend do traduzia.com.br no desktop (Docker Desktop + WSL2).
+# Nó "desktop" do traduzia (Docker Desktop + WSL2). O nó "mac" tem um compose
+# próprio ao lado (docker-compose.mac.yml).
 #
 #   docker compose up -d --build
 #   docker compose exec traduzia python server.py token create felipe
@@ -13,6 +14,9 @@ services:
     ports:
       - "8010:8010"
     environment:
+      # identidade deste nó no seletor de máquina do site
+      - NODE_ID=desktop
+      - NODE_LABEL=Desktop RTX 3050
       # dentro do container, o LM Studio (Windows) é host.docker.internal;
       # env var tem precedência sobre o LOCAL_BASE_URL do .env
       - LOCAL_BASE_URL=http://host.docker.internal:1234/v1

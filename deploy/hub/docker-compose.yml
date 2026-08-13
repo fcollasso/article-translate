@@ -1,0 +1,39 @@
+# Hub do traduzia na VPS. É a única peça que precisa estar sempre ligada:
+# serve o site e os downloads (via R2) mesmo com desktop e Mac desligados.
+#
+#   cd <repo> && docker compose -f deploy/hub/docker-compose.yml up -d --build
+#
+# A porta 8020 fica só no localhost da VPS — quem expõe para a internet é o
+# quark-nginx (TLS + o vhost em deploy/nginx/traduzia.conf).
+services:
+  hub:
+    build:
+      context: ../..            # a raiz do repo: a imagem precisa de frontend/ e favicon/
+      dockerfile: deploy/hub/Dockerfile
+    container_name: traduzia-hub
+    restart: unless-stopped
+    # o quark-nginx roda em container: ele alcança o hub pelo NOME do container,
+    # e para isso os dois precisam estar na mesma rede Docker. Confirme o nome da
+    # rede do quark e ajuste abaixo:
+    #   docker inspect quark-nginx -f '{{range $$k,$$v := .NetworkSettings.Networks}}{{$$k}}{{end}}'
+    networks:
+      - quark
+    # a porta fica só no localhost da VPS, para depuração (curl na própria VPS);
+    # quem expõe para a internet é o quark-nginx, com TLS
+    ports:
+      - "127.0.0.1:8020:8020"
+    environment:
+      - NODE_LABEL=Servidor
+      # sha256 dos tokens aceitos, separados por vírgula.
+      # Gere com: docker compose -f deploy/hub/docker-compose.yml run --rm hub python hub.py hash <token>
+      - HUB_TOKEN_HASHES=${HUB_TOKEN_HASHES}
+      # mesmas credenciais R2 dos nós (mesmo bucket; as chaves são jobs/<id>/…)
+      - R2_ACCOUNT_ID=${R2_ACCOUNT_ID}
+      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID}
+      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY}
+      - R2_BUCKET=${R2_BUCKET:-traduzia}
+
+networks:
+  quark:
+    external: true
+    name: ${QUARK_NETWORK:-quark_default}
