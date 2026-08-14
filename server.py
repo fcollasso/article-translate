@@ -24,10 +24,12 @@ Como funciona:
     VPS, que roteia /n/<NODE_ID>/ para cada uma removendo o prefixo; o frontend
     descobre quem está no ar pelo GET /node e deixa escolher onde rodar o job.
   - Jobs e tokens ficam em SQLite (data/traduzai.db) — sobrevivem a restart.
-  - Com R2_* configurado no .env, as saídas sobem para o R2 e os downloads
-    viram URLs pré-assinadas servidas direto pela Cloudflare. Sem R2, os
-    arquivos são servidos localmente com URL assinada (HMAC, 1h de validade)
-    — assinada porque links <a> não carregam o header Authorization.
+  - Terminar uma tradução deixa os arquivos NA MÁQUINA; nada vai para o acervo
+    sozinho. Mandar para o R2 é decisão explícita, pelo 'enviar para o acervo'
+    (POST /api/jobs/<id>/archive) ou pelo 'server.py r2 push' em lote.
+  - Download de arquivo que está na máquina sai dela com URL assinada (HMAC, 1h)
+    — assinada porque links <a> não carregam o header Authorization. Já o que
+    está no acervo baixa direto da Cloudflare, por URL pré-assinada do R2.
   - Jobs rodam traduzir.py com --base-url apontado para /llmproxy/v1 deste
     servidor, que repassa ao LM Studio (LOCAL_BASE_URL) registrando tokens
     e duração de cada requisição. /llmproxy só aceita conexões de localhost.
@@ -438,21 +440,15 @@ def collect_outputs(job_id: str) -> list[dict]:
     return found
 
 
-def upload_outputs(job_id: str, files: list[dict], log) -> list[dict]:
-    """Sobe as saídas para o R2; em falha (ou sem R2) o arquivo fica servido localmente."""
-    result = []
+def strip_paths(files: list[dict]) -> list[dict]:
+    """Tira o Path (não serializa em JSON) antes de guardar no banco.
+
+    Terminar uma tradução NÃO manda nada para o acervo: quem decide é o Felipe,
+    pelo botão 'enviar para o acervo'. Enquanto isso o arquivo fica na máquina e
+    o download sai dela, por URL assinada."""
     for f in files:
-        path = f.pop("path")
-        if R2_ENABLED:
-            key = f"jobs/{job_id}/{f['name']}"
-            content_type = "application/pdf" if f["name"].endswith(".pdf") else "text/csv"
-            try:
-                r2().upload_file(str(path), R2_BUCKET, key, ExtraArgs={"ContentType": content_type})
-                f["key"] = key
-            except Exception as exc:
-                log.write(f"\n[aviso] upload para o R2 falhou ({f['name']}): {exc}\n")
-        result.append(f)
-    return result
+        f.pop("path", None)
+    return files
 
 
 def _stage_progress(line: str) -> float | None:
@@ -540,8 +536,7 @@ def worker_loop() -> None:
             returncode = run_job(job_id, UPLOADS_DIR / job_id / filename, out_dir, state, proxy_url)
             files = collect_outputs(job_id)
             if returncode == 0 and files:
-                with open(out_dir / "run.log", "a", encoding="utf-8") as log:
-                    files_json = json.dumps(upload_outputs(job_id, files, log))
+                files_json = json.dumps(strip_paths(files))
                 status = "done"
             else:
                 error = f"traduzir.py saiu com código {returncode} (ver log)"

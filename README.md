@@ -150,7 +150,8 @@ e ajuste `QUARK_NETWORK` se não for `quark_default`.
 
 - Cada máquina tem **fila, banco e LM Studio próprios**: nada é compartilhado entre elas além do bucket R2. A lista de trabalhos no site junta as duas, com etiqueta de qual rodou o quê.
 - Tokens e jobs ficam em SQLite (volume `traduzia-data`); gerencie com `token list` / `token revoke <nome>`. O token é **por máquina** — use `--token` para replicar o mesmo valor na outra, e o hash dele no hub. Revogar de verdade = revogar nos três lugares.
-- R2 é o que sustenta o acervo: preencha `R2_*` no `.env` das duas máquinas (seção no `.env.example`). Sem ele tudo continua funcionando, mas os downloads passam pelo túnel e o acervo do site fica indisponível com os PCs desligados.
+- R2 é o que sustenta o acervo: preencha `R2_*` no `.env` das duas máquinas (seção no `.env.example`). Sem ele tudo continua funcionando, mas o acervo do site fica indisponível com os PCs desligados.
+- **Terminar uma tradução não manda nada para o acervo.** O arquivo fica na máquina e o download sai dela; ir para o R2 é decisão sua, pelo botão **enviar para o acervo** (que também libera o espaço na máquina) ou pelo `r2 push` em lote. Trabalhos e acervo são coisas separadas: excluir em Trabalhos tira só da máquina, excluir no Acervo tira do R2.
 - O vhost do nginx da VPS está versionado em `deploy/nginx/traduzia.conf`; o passo a passo do deploy está no `ESTADO.md`.
 - Sem Docker (`.venv/bin/python server.py`) também funciona, mas exige `pip install boto3`, `FRONTEND_HOST=0.0.0.0` e portproxy do Windows→WSL — o Docker Desktop publica a porta no Windows sozinho.
 - Aberto direto na máquina (`http://localhost:8010`) o site funciona igual, só sem o seletor: sem o nginx na frente não existe prefixo `/n/`, e o frontend entra em modo de máquina única.
