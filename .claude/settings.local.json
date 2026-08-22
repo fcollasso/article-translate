@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker --version)",
+      "Bash(docker compose *)",
+      "Bash(curl -s -o /dev/null -w \"GET / -> %{http_code}\\\\n\" http://localhost:8010/)",
+      "Bash(curl -s http://localhost:8010/api/health)",
+      "Bash(nvidia-smi --query-gpu=index,name,memory.total,memory.used,utilization.gpu --format=csv,noheader)",
+      "Bash(/usr/lib/wsl/lib/nvidia-smi --query-gpu=index,name,memory.total,memory.used,utilization.gpu --format=csv,noheader)",
+      "Bash(python3 -c ' *)",
+      "Bash(python3 -m py_compile server.py)",
+      "Bash(/usr/lib/wsl/lib/nvidia-smi *)",
+      "Bash(top -bn1)",
+      "WebSearch",
+      "WebFetch(domain:lmstudio.ai)",
+      "WebFetch(domain:deepwiki.com)",
+      "Bash(python3 -m venv /tmp/lmsdk)",
+      "Bash(/tmp/lmsdk/bin/pip install *)",
+      "Bash(/tmp/lmsdk/bin/python -c ' *)",
+      "Read(//tmp/lmsdk/lib/python3.12/site-packages/lmstudio/**)",
+      "Bash(/tmp/lmsdk/bin/python *)",
+      "Bash(python3 -m py_compile /mnt/g/article-translate/server.py)",
+      "Bash(git -C /mnt/g/article-translate remote -v)",
+      "Bash(git -C /mnt/g/article-translate status --short)",
+      "Bash(tailscale status *)",
+      "Bash(git add *)",
+      "Bash(ssh *)",
+      "Read(//mnt/c/Users/**)",
+      "Bash(\"/mnt/c/Program Files/Tailscale/tailscale.exe\" status)"
+    ]
+  }
+}
