@@ -58,7 +58,7 @@ from urllib.parse import quote
 
 import httpx
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request, UploadFile
+from fastapi import FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
@@ -84,6 +84,18 @@ PORT = int(cfg("FRONTEND_PORT", "8010"))
 # uma removendo o prefixo — por isso nada aqui precisa saber em que caminho é servido.
 NODE_ID = cfg("NODE_ID", "local")
 NODE_LABEL = cfg("NODE_LABEL") or NODE_ID
+
+# Modelos ofertados no seletor do site (JSON no .env; ver .env.example). Cada
+# entrada: {"id": <model key no LM Studio>, "label": ..., "context": tokens,
+# "gpus": [[índices]]} — índices na ordem do nvidia-smi/LM Studio, e cada lista
+# interna é uma combinação permitida (a primeira é o default). Sem MODEL_OPTIONS
+# não há seletor e tudo se comporta como antes (LOCAL_MODEL direto, nenhum
+# load/unload de modelo — caso do nó mac).
+try:
+    MODEL_OPTIONS: list[dict] = json.loads(cfg("MODEL_OPTIONS", "[]"))
+except json.JSONDecodeError:
+    print("MODEL_OPTIONS não é JSON válido — seletor de modelo desativado", file=sys.stderr)
+    MODEL_OPTIONS = []
 
 DATA_DIR = SCRIPT_DIR / "data"
 DB_PATH = Path(cfg("DB_PATH", str(DATA_DIR / "traduzai.db")))
@@ -153,7 +165,9 @@ CREATE TABLE IF NOT EXISTS jobs (
   files       TEXT NOT NULL DEFAULT '[]',
   created_at  REAL NOT NULL,
   started_at  REAL,
-  finished_at REAL
+  finished_at REAL,
+  model       TEXT,
+  gpus        TEXT
 );
 CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,
@@ -173,6 +187,11 @@ def init_db() -> bytes:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with closing(db()) as conn, conn:
         conn.executescript(SCHEMA)
+        for col in ("model", "gpus"):  # bancos criados antes do seletor de modelo
+            try:
+                conn.execute(f"ALTER TABLE jobs ADD COLUMN {col} TEXT")
+            except sqlite3.OperationalError:
+                pass
         row = conn.execute("SELECT value FROM meta WHERE key='download_secret'").fetchone()
         if row is None:
             secret = secrets.token_hex(32)
@@ -309,17 +328,42 @@ NVIDIA_SMI = shutil.which("nvidia-smi") or "/usr/lib/wsl/lib/nvidia-smi"
 
 
 def read_gpu() -> dict | None:
+    """Agrega todas as GPUs do nó: VRAM somada (pool total disponível para o
+    LM Studio), utilização e temperatura pela pior placa (é ela o gargalo
+    quando o modelo está dividido entre as duas)."""
     try:
         out = subprocess.run(
             [NVIDIA_SMI, "--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu",
              "--format=csv,noheader,nounits"],
             capture_output=True, text=True, timeout=5,
         )
-        util, used, total, temp = [v.strip() for v in out.stdout.strip().splitlines()[0].split(",")]
-        return {"util_pct": int(util), "vram_used_mib": int(used),
-                "vram_total_mib": int(total), "temp_c": int(temp)}
+        gpus = [[int(v.strip()) for v in line.split(",")]
+                for line in out.stdout.strip().splitlines()]
+        if not gpus:
+            return None
+        return {"util_pct": max(g[0] for g in gpus),
+                "vram_used_mib": sum(g[1] for g in gpus),
+                "vram_total_mib": sum(g[2] for g in gpus),
+                "temp_c": max(g[3] for g in gpus)}
     except Exception:
         return None
+
+
+_gpu_names: list[str] | None = None
+
+
+def gpu_names() -> list[str]:
+    """Nomes das GPUs na ordem dos índices (cacheado — não muda com o servidor
+    de pé). Vira rótulo dos botões de placa no site."""
+    global _gpu_names
+    if _gpu_names is None:
+        try:
+            out = subprocess.run([NVIDIA_SMI, "--query-gpu=name", "--format=csv,noheader"],
+                                 capture_output=True, text=True, timeout=5)
+            _gpu_names = [l.strip() for l in out.stdout.strip().splitlines() if l.strip()]
+        except Exception:
+            _gpu_names = []
+    return _gpu_names
 
 
 _has_gpu: bool | None = None
@@ -419,6 +463,7 @@ def job_to_dict(row: sqlite3.Row) -> dict:
         "started_at": row["started_at"],
         "finished_at": row["finished_at"],
         "error": row["error"],
+        "model": row["model"],
         "progress": round(progress, 1) if progress is not None else None,
         "log_tail": log_tail(row["id"]) if status in ("running", "error") else "",
         "files": [
@@ -466,12 +511,54 @@ def _stage_progress(line: str) -> float | None:
     return lo + (hi - lo) * min(x / y, 1.0)
 
 
-def run_job(job_id: str, pdf_path: Path, out_dir: Path, state: RunState, proxy_url: str) -> int:
+_LOADED_COMBO: tuple[str, tuple[int, ...]] | None = None
+
+
+def ensure_model(model_id: str, gpu_idx: list[int], context: int | None, state: RunState) -> None:
+    """Deixa o LM Studio com exatamente este modelo carregado nestas GPUs.
+
+    Usa o SDK oficial (websocket, mesma porta do servidor) porque a API REST
+    não expõe seleção de GPU. Descarrega o que estiver na memória antes — a
+    fila é serial e a VRAM não comporta dois modelos. Com mais de uma placa o
+    split é por prioridade (favorMainGpu na primeira da combinação), não
+    'evenly': as placas são assimétricas e a sobra é que vai para a menor."""
+    global _LOADED_COMBO
+    combo = (model_id, tuple(gpu_idx))
+    if _LOADED_COMBO == combo:
+        return
+    import lmstudio as lms  # import tardio: dependência só exercitada com MODEL_OPTIONS
+
+    names = ", ".join(gpu_names()[i] if i < len(gpu_names()) else f"GPU {i}" for i in gpu_idx)
+    state.tail.append(f"Carregando {model_id} ({names}) no LM Studio…")
+    client = lms.Client(LMSTUDIO_ROOT.split("://", 1)[-1])
+    try:
+        for handle in client.llm.list_loaded():
+            handle.unload()
+        n_gpus = max(len(gpu_names()), max(gpu_idx) + 1)
+        gpu: dict = {"ratio": 1.0,
+                     "disabled_gpus": [i for i in range(n_gpus) if i not in gpu_idx]}
+        if len(gpu_idx) > 1:
+            gpu["split_strategy"] = "favorMainGpu"
+            gpu["main_gpu"] = gpu_idx[0]
+        config: dict = {"gpu": gpu}
+        if context:
+            config["context_length"] = context
+        client.llm.load_new_instance(model_id, config=config)
+        _LOADED_COMBO = combo
+        state.tail.append("Modelo carregado.")
+    finally:
+        client.close()
+
+
+def run_job(job_id: str, pdf_path: Path, out_dir: Path, state: RunState, proxy_url: str,
+            model: str | None = None) -> int:
     """Run traduzir.py under a pty so babeldoc's rich progress bars render
     (they carry per-stage counters we parse into state.progress). The log file
     gets progress frames throttled to ~1/s; other lines are kept verbatim."""
     cmd = [sys.executable, str(SCRIPT_DIR / "traduzir.py"), str(pdf_path),
            "--backend", "local", "--base-url", proxy_url, "--out", str(out_dir)]
+    if model:
+        cmd += ["--model", model]
     env = {**os.environ, "COLUMNS": "200", "LINES": "50", "TERM": "xterm-256color"}
     master, slave = pty.openpty()
     proc = subprocess.Popen(cmd, stdout=slave, stderr=slave, stdin=subprocess.DEVNULL,
@@ -516,12 +603,13 @@ def worker_loop() -> None:
     while True:
         with closing(db()) as conn:
             row = conn.execute(
-                "SELECT id, filename FROM jobs WHERE status='queued' ORDER BY created_at LIMIT 1"
+                "SELECT id, filename, model, gpus FROM jobs WHERE status='queued' ORDER BY created_at LIMIT 1"
             ).fetchone()
         if row is None:
             time.sleep(0.5)
             continue
-        job_id, filename = row["id"], row["filename"]
+        job_id, filename, model = row["id"], row["filename"], row["model"]
+        gpu_idx = json.loads(row["gpus"]) if row["gpus"] else []
         out_dir = job_out_dir(job_id)
         out_dir.mkdir(parents=True, exist_ok=True)
         state = RunState()
@@ -533,7 +621,11 @@ def worker_loop() -> None:
 
         status, error, files_json = "error", None, "[]"
         try:
-            returncode = run_job(job_id, UPLOADS_DIR / job_id / filename, out_dir, state, proxy_url)
+            if model and gpu_idx:
+                opt = next((o for o in MODEL_OPTIONS if o.get("id") == model), None)
+                ensure_model(model, gpu_idx, (opt or {}).get("context"), state)
+            returncode = run_job(job_id, UPLOADS_DIR / job_id / filename, out_dir, state, proxy_url,
+                                 model=model)
             files = collect_outputs(job_id)
             if returncode == 0 and files:
                 files_json = json.dumps(strip_paths(files))
@@ -590,7 +682,12 @@ def node() -> dict:
     """Identidade do nó + probe de saúde. Sem auth de propósito: o frontend
     precisa saber quais máquinas estão no ar antes de haver um token na mão
     (e para mostrar o nó como offline em vez de fingir que ele não existe)."""
-    return {"id": NODE_ID, "label": NODE_LABEL, "gpu": has_gpu()}
+    info = {"id": NODE_ID, "label": NODE_LABEL, "gpu": has_gpu()}
+    if MODEL_OPTIONS:
+        info["models"] = [{"id": o.get("id"), "label": o.get("label") or o.get("id"),
+                           "gpus": o.get("gpus", [])} for o in MODEL_OPTIONS]
+        info["gpu_names"] = gpu_names()
+    return info
 
 
 @app.get("/api/auth/check")
@@ -598,11 +695,34 @@ def auth_check(request: Request) -> dict:
     return {"ok": True, "name": request.state.token_name}
 
 
+def validate_model_choice(model: str | None, gpus: str | None) -> tuple[str | None, str | None]:
+    """(model, gpus em JSON) validados contra MODEL_OPTIONS — ou (None, None)
+    quando o nó não tem seletor / o cliente não mandou nada."""
+    if not MODEL_OPTIONS or not model:
+        return None, None
+    opt = next((o for o in MODEL_OPTIONS if o.get("id") == model), None)
+    if opt is None:
+        raise HTTPException(400, detail="Modelo desconhecido — recarregue a página")
+    combos = [sorted(c) for c in opt.get("gpus", [])]
+    if gpus:
+        try:
+            req = sorted(int(x) for x in gpus.split(","))
+        except ValueError:
+            raise HTTPException(400, detail="Parâmetro de GPUs inválido")
+        if combos and req not in combos:
+            raise HTTPException(400, detail="Combinação de placas não permitida para este modelo")
+    else:
+        req = combos[0] if combos else []
+    return model, json.dumps(req)
+
+
 @app.post("/api/jobs", status_code=201)
-async def create_job(file: UploadFile) -> dict:
+async def create_job(file: UploadFile, model: str | None = Form(default=None),
+                     gpus: str | None = Form(default=None)) -> dict:
     name = Path(file.filename or "").name
     if not name.lower().endswith(".pdf"):
         raise HTTPException(400, detail="Envie um arquivo .pdf")
+    model, gpus_json = validate_model_choice(model, gpus)
     data = await file.read()
     if len(data) > MAX_UPLOAD_BYTES:
         raise HTTPException(400, detail="Arquivo maior que 200 MB")
@@ -615,9 +735,9 @@ async def create_job(file: UploadFile) -> dict:
     (job_dir / name).write_bytes(data)
 
     with closing(db()) as conn, conn:
-        conn.execute("INSERT INTO jobs (id, filename, created_at) VALUES (?, ?, ?)",
-                     (job_id, name, time.time()))
-    return {"id": job_id, "filename": name}
+        conn.execute("INSERT INTO jobs (id, filename, created_at, model, gpus) VALUES (?, ?, ?, ?, ?)",
+                     (job_id, name, time.time(), model, gpus_json))
+    return {"id": job_id, "filename": name, "model": model}
 
 
 @app.get("/api/jobs")

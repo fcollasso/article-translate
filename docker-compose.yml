@@ -16,7 +16,7 @@ services:
     environment:
       # identidade deste nó no seletor de máquina do site
       - NODE_ID=desktop
-      - NODE_LABEL=Desktop RTX 3050
+      - NODE_LABEL=Desktop RTX 5060 Ti
       # dentro do container, o LM Studio (Windows) é host.docker.internal;
       # env var tem precedência sobre o LOCAL_BASE_URL do .env
       - LOCAL_BASE_URL=http://host.docker.internal:1234/v1

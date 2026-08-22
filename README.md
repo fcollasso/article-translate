@@ -68,10 +68,14 @@ Saída em `./output/`: `artigo.no_watermark.mono.pdf` (traduzido) e `.dual.pdf` 
 
 ### Modelos recomendados por máquina
 
-**Desktop RTX 3050 8 GB (máquina do projeto):**
-- `Qwen3 8B` (GGUF, Q4_K_M) — cabe inteiro na VRAM
-- `Gemma 3 4B` — se quiser velocidade máxima
-- Evite 12B+: vai transbordar para a RAM (os 64 GB ajudam, mas a velocidade despenca)
+**Desktop RTX 5060 Ti 16 GB + RTX 3050 8 GB (máquina do projeto):**
+- `Qwen3 8B` (GGUF, Q4_K_M, ~5 GB) — cabe em qualquer uma das placas
+- `Qwen3 14B` (Q4_K_M, ~9 GB) — cabe inteiro na 5060 Ti; melhor custo-benefício
+- `Qwen3 32B` (Q4_K_M, ~20 GB) — só dividido entre as duas placas; qualidade máxima,
+  velocidade limitada pela 3050
+- O monitor fica na **3050** de propósito: a 5060 Ti infere sem disputar com o desktop
+- No site, o seletor de modelo/placas (via `MODEL_OPTIONS` no `.env`) carrega e divide
+  o modelo no LM Studio automaticamente por job
 
 **MacBook M5 Pro (24 GB — não usar para inferência):**
 - Testado com `Qwen3 14B` MLX: a tradução funciona, mas consome a máquina inteira e a deixa inutilizável durante o processo
@@ -103,7 +107,7 @@ navegador → traduzia.com.br → nginx na VPS (TLS, bloqueia /llmproxy)
               │                   └──── Tailscale ────┘
     hub (container na VPS)      Docker [server.py + SQLite] × 2
       página + acervo do R2          ↓ host.docker.internal
-              │                  LM Studio (RTX 3050 / M5 Pro)
+              │                  LM Studio (5060 Ti + 3050 / M5 Pro)
               ↓
       Cloudflare R2 ←──── os nós sobem as saídas para cá
 

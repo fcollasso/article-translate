@@ -602,6 +602,14 @@
         <span class="lbl">rodar em</span>
         <div class="node-group" id="node-group" role="group" aria-label="Máquina que vai traduzir"></div>
       </div>
+      <div class="node-pick" id="model-pick" hidden>
+        <span class="lbl">modelo</span>
+        <div class="node-group" id="model-group" role="group" aria-label="Modelo de tradução"></div>
+      </div>
+      <div class="node-pick" id="gpu-pick" hidden>
+        <span class="lbl">placas</span>
+        <div class="node-group" id="gpu-group" role="group" aria-label="Placas de vídeo usadas"></div>
+      </div>
       <input type="file" id="file-input" accept=".pdf" multiple hidden>
       <div id="dropzone" role="button" tabindex="0"
            aria-label="Enviar PDF para tradução. Arraste um arquivo ou pressione Enter para escolher.">
@@ -791,7 +799,7 @@ try { TOKEN = localStorage.getItem("traduzai.token") || ""; } catch (e) { /* ok 
    o PDF. Aberto direto na máquina (localhost:8010) não existe prefixo: aí o
    discoverNodes() cai no "modo direto", com um nó único de base vazia. */
 const NODES = [
-  { id: "desktop", label: "Desktop RTX 3050", base: "/n/desktop" },
+  { id: "desktop", label: "Desktop RTX 5060 Ti", base: "/n/desktop" },
   { id: "mac",     label: "MacBook M5 Pro",   base: "/n/mac" },
 ];
 
@@ -809,6 +817,8 @@ const state = {
   nodes: [],         // {id, label, base, online, gpu, auth: "ok"|"denied"|null}
   nodeId: null,      // máquina selecionada
   pickerSig: null,
+  modelChoice: {},   // nodeId -> {model, gpus: "0,1"} (o que o Felipe escolheu)
+  modelSig: null,
   jobs: [],
   metricsTimer: null,
   jobsTimer: null,
@@ -832,6 +842,8 @@ async function probeNode(node) {
     // o id do roster manda (é a rota); do backend aproveitamos nome e se tem GPU
     if (info.label) node.label = info.label;
     node.gpu = info.gpu !== false;
+    node.models = info.models || [];       // seletor de modelo/placas (só o desktop)
+    node.gpuNames = info.gpu_names || [];
     node.online = true;
   } catch (e) {
     node.online = false;
@@ -856,9 +868,73 @@ function nodesSig() {
     .join("|");
 }
 
+/* ------- seletor de modelo/placas (nós que anunciam models no /node) ------- */
+
+const gpuShort = (name) => name.replace(/NVIDIA |GeForce |Laptop GPU/g, "").trim();
+const comboKey = (combo) => combo.join(",");
+const comboLabel = (combo, names) =>
+  combo.map((i) => (names[i] ? gpuShort(names[i]) : "GPU " + i)).join(" + ");
+
+/** Escolha efetiva para um nó: o que foi clicado, saneado contra o que o nó
+    oferece hoje (modelo pode sumir do .env, combinação pode não valer mais). */
+function modelChoice(node) {
+  const models = (node && node.models) || [];
+  if (!models.length) return null;
+  const saved = state.modelChoice[node.id] || {};
+  const m = models.find((x) => x.id === saved.model) || models[0];
+  const combos = (m.gpus || []).map(comboKey);
+  const g = combos.includes(saved.gpus) ? saved.gpus : combos[0] || "";
+  return { model: m.id, gpus: g };
+}
+
+function setModelChoice(nodeId, model, gpus) {
+  state.modelChoice[nodeId] = { model, gpus };
+  try { localStorage.setItem("traduzai.model", JSON.stringify(state.modelChoice)); } catch (e) { /* ok */ }
+  renderModelPicker();
+}
+
+function renderModelPicker() {
+  const n = selectedNode();
+  const models = (n && n.online && n.models) || [];
+  const choice = models.length ? modelChoice(n) : null;
+  const sig = [n && n.id, JSON.stringify(models), JSON.stringify(choice)].join("|");
+  if (sig === state.modelSig) return;
+  state.modelSig = sig;
+
+  $("model-pick").hidden = !models.length;
+  $("gpu-pick").hidden = !models.length;
+  if (!models.length) return;
+
+  const mg = $("model-group");
+  mg.innerHTML = "";
+  for (const m of models) {
+    const b = el("button", "node-btn");
+    b.type = "button";
+    b.setAttribute("aria-pressed", String(m.id === choice.model));
+    b.textContent = m.label || m.id;
+    // trocar de modelo zera a escolha de placas (cada modelo tem as suas)
+    b.addEventListener("click", () => setModelChoice(n.id, m.id, null));
+    mg.append(b);
+  }
+
+  const cur = models.find((x) => x.id === choice.model);
+  const gg = $("gpu-group");
+  gg.innerHTML = "";
+  for (const combo of cur.gpus || []) {
+    const key = comboKey(combo);
+    const b = el("button", "node-btn");
+    b.type = "button";
+    b.setAttribute("aria-pressed", String(key === choice.gpus));
+    b.textContent = comboLabel(combo, n.gpuNames || []);
+    b.addEventListener("click", () => setModelChoice(n.id, choice.model, key));
+    gg.append(b);
+  }
+}
+
 /** Rebuild só quando algo muda de verdade — o poll é de 2s e recriar os botões
     a cada volta roubaria o foco do teclado. */
 function renderNodePicker() {
+  renderModelPicker(); // tem assinatura própria; barato chamar sempre junto
   const sig = nodesSig();
   if (sig === state.pickerSig) return;
   state.pickerSig = sig;
@@ -954,6 +1030,7 @@ async function bootNodes() {
   let saved = null;
   try { saved = localStorage.getItem("traduzai.node"); } catch (e) { /* ok */ }
   state.nodeId = saved && nodeById(saved) ? saved : null;
+  try { state.modelChoice = JSON.parse(localStorage.getItem("traduzai.model")) || {}; } catch (e) { /* ok */ }
   ensureSelection();
   renderNodePicker();
 }
@@ -1293,6 +1370,11 @@ async function uploadFile(file) {
   showUploadMsg(`Enviando "${file.name}"…`, "info");
   const fd = new FormData();
   fd.append("file", file);
+  const choice = modelChoice(node);
+  if (choice) {
+    fd.append("model", choice.model);
+    fd.append("gpus", choice.gpus);
+  }
   try {
     const res = await fetchJSON(node.base, "/api/jobs", { method: "POST", body: fd });
     const where = multiNode() ? ` em ${node.label}` : "";
@@ -1383,8 +1465,10 @@ function buildJobEl() {
   const name = el("span", "job-name");
   const nodeChip = el("span", "job-node");
   nodeChip.hidden = true;
+  const modelChip = el("span", "job-node");
+  modelChip.hidden = true;
   const time = el("span", "job-time");
-  row1.append(badge, name, nodeChip, time);
+  row1.append(badge, name, nodeChip, modelChip, time);
 
   const progress = el("div", "job-progress");
   const stageRow = el("div", "stage-row");
@@ -1424,7 +1508,7 @@ function buildJobEl() {
   log.hidden = true;
 
   root.append(row1, progress, errorBox, files, actions, log);
-  return { root, refs: { badge, name, nodeChip, time, progress, stage, pct, fill, errorBox, log, logPre, files, actions, archive, discard }, filesSig: "", lastLog: null };
+  return { root, refs: { badge, name, nodeChip, modelChip, time, progress, stage, pct, fill, errorBox, log, logPre, files, actions, archive, discard }, filesSig: "", lastLog: null };
 }
 
 function updateJobEl(entry, job) {
@@ -1439,6 +1523,11 @@ function updateJobEl(entry, job) {
   const jobNode = nodeById(job.node);
   refs.nodeChip.hidden = !multiNode() || !jobNode;
   if (jobNode) refs.nodeChip.textContent = jobNode.label;
+  refs.modelChip.hidden = !job.model;
+  if (job.model) {
+    const opt = jobNode && (jobNode.models || []).find((m) => m.id === job.model);
+    refs.modelChip.textContent = (opt && opt.label) || job.model;
+  }
   refs.time.textContent = timeInfo(job, now);
 
   // progresso (só job ativo)

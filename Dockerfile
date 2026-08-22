@@ -7,8 +7,9 @@ FROM python:3.12-slim
 RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-# fastapi/uvicorn/httpx já vêm como dependências do pdf2zh-next; boto3 é do R2
-RUN pip install --no-cache-dir pdf2zh-next==2.9.0 boto3 python-multipart
+# fastapi/uvicorn/httpx já vêm como dependências do pdf2zh-next; boto3 é do R2;
+# lmstudio é do seletor de modelo/GPUs (carrega modelo no LM Studio por job)
+RUN pip install --no-cache-dir pdf2zh-next==2.9.0 boto3 python-multipart lmstudio
 
 # pré-baixa os assets do babeldoc (DocLayout-YOLO, fontes, CMaps) na imagem.
 # o --warmup da 2.9.0 termina com um AssertionError cosmético — por isso o || true
