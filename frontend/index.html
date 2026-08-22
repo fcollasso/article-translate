@@ -145,34 +145,78 @@
   }
   .offline .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--red); flex: none; }
 
-  .stale > *:not(.sec-label):not(.metrics-toggle):not(.node-pick) { opacity: .55; transition: opacity .3s; }
+  .stale > *:not(.sec-label):not(.metrics-toggle):not(.setup) { opacity: .55; transition: opacity .3s; }
 
-  /* seletor de máquina — segmented control no idioma das pills do header */
-  .node-pick { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
-  .node-pick .lbl { font-family: var(--mono); font-size: 12px; color: var(--text-3); }
-  .node-group { display: flex; gap: 6px; flex-wrap: wrap; }
-  .node-btn {
+  /* ============================================================
+     Configuração do envio — máquina / modelo / placas
+     Um card só, colado no topo da dropzone (as bordas de baixo do card e de
+     cima da dropzone se fundem), com um segmented control por campo.
+     ============================================================ */
+  .setup {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    align-items: center;
+    gap: 8px 18px;
+    padding: 14px 18px;
+    border-radius: 16px 16px 0 0;
+    border-bottom: none;
+    margin-bottom: -12px; /* cola na dropzone (gap da section) */
+  }
+  .setup:not([hidden]) ~ #dropzone { border-top-left-radius: 0; border-top-right-radius: 0; }
+  .setup-field { display: contents; }
+  .setup-k {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-3);
+    padding-right: 6px;
+  }
+  @media (max-width: 640px) {
+    .setup { grid-template-columns: 1fr; gap: 6px; }
+    .setup-k { padding-top: 6px; }
+  }
+  .seg {
+    display: inline-flex;
+    gap: 2px;
+    padding: 3px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface-2);
+    width: fit-content;
+    max-width: 100%;
+    flex-wrap: wrap;
+  }
+  .seg-btn {
     display: flex;
     align-items: center;
     gap: 7px;
-    padding: 7px 13px;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    background: var(--surface);
+    padding: 5px 11px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: transparent;
     font-family: inherit;
     font-size: 12.5px;
     font-weight: 500;
     color: var(--text-2);
     white-space: nowrap;
     cursor: pointer;
-    transition: border-color .15s, color .15s, background .15s;
+    transition: color .15s, background .15s, box-shadow .15s;
   }
-  .node-btn:hover:not(:disabled) { border-color: var(--border-strong); color: var(--text); }
-  .node-btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
-  .node-btn:disabled { cursor: not-allowed; opacity: .5; }
-  .node-btn .st { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex: none; }
-  .node-btn.off .st { background: var(--red); }
-  .node-btn.noauth .st { background: var(--amber); }
+  .seg-btn:hover:not(:disabled) { color: var(--text); }
+  .seg-btn[aria-pressed="true"] {
+    background: var(--surface);
+    color: var(--text);
+    border-color: var(--border);
+    box-shadow: 0 1px 2px oklch(0 0 0/.18);
+  }
+  .seg-btn:disabled { cursor: not-allowed; opacity: .45; }
+  .seg-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .seg-btn .st { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex: none; }
+  .seg-btn.off .st { background: var(--red); }
+  .seg-btn.noauth .st { background: var(--amber); }
+  .seg-sub { font-family: var(--mono); font-size: 11px; color: var(--text-3); }
+  .seg-btn[aria-pressed="true"] .seg-sub { color: var(--accent); }
   /* etiqueta da máquina em cada job da lista unificada */
   .job-node {
     font-family: var(--mono);
@@ -598,17 +642,19 @@
 
     <!-- ==================== Upload ==================== -->
     <section id="upload-section">
-      <div class="node-pick" id="node-pick" hidden>
-        <span class="lbl">rodar em</span>
-        <div class="node-group" id="node-group" role="group" aria-label="Máquina que vai traduzir"></div>
-      </div>
-      <div class="node-pick" id="model-pick" hidden>
-        <span class="lbl">modelo</span>
-        <div class="node-group" id="model-group" role="group" aria-label="Modelo de tradução"></div>
-      </div>
-      <div class="node-pick" id="gpu-pick" hidden>
-        <span class="lbl">placas</span>
-        <div class="node-group" id="gpu-group" role="group" aria-label="Placas de vídeo usadas"></div>
+      <div class="setup card" id="setup" hidden>
+        <div class="setup-field" id="node-pick" hidden>
+          <span class="setup-k">Máquina</span>
+          <div class="seg" id="node-group" role="group" aria-label="Máquina que vai traduzir"></div>
+        </div>
+        <div class="setup-field" id="model-pick" hidden>
+          <span class="setup-k">Modelo</span>
+          <div class="seg" id="model-group" role="group" aria-label="Modelo de tradução"></div>
+        </div>
+        <div class="setup-field" id="gpu-pick" hidden>
+          <span class="setup-k">Placas</span>
+          <div class="seg" id="gpu-group" role="group" aria-label="Placas de vídeo usadas"></div>
+        </div>
       </div>
       <input type="file" id="file-input" accept=".pdf" multiple hidden>
       <div id="dropzone" role="button" tabindex="0"
@@ -844,6 +890,7 @@ async function probeNode(node) {
     node.gpu = info.gpu !== false;
     node.models = info.models || [];       // seletor de modelo/placas (só o desktop)
     node.gpuNames = info.gpu_names || [];
+    node.gpuVram = info.gpu_vram_mib || [];
     node.online = true;
   } catch (e) {
     node.online = false;
@@ -874,6 +921,26 @@ const gpuShort = (name) => name.replace(/NVIDIA |GeForce |Laptop GPU/g, "").trim
 const comboKey = (combo) => combo.join(",");
 const comboLabel = (combo, names) =>
   combo.map((i) => (names[i] ? gpuShort(names[i]) : "GPU " + i)).join(" + ");
+/** VRAM somada da combinação ("24 GB"); vazio se o nó não informou. */
+function comboVram(combo, vram) {
+  const mib = combo.reduce((acc, i) => acc + (vram[i] || 0), 0);
+  return mib ? Math.round(mib / 1024) + " GB" : "";
+}
+
+/** Botão de segmented control: texto + subtexto mono opcional. */
+function segBtn(text, sub, pressed) {
+  const b = el("button", "seg-btn");
+  b.type = "button";
+  b.setAttribute("aria-pressed", String(!!pressed));
+  if (text) b.append(document.createTextNode(text));
+  if (sub) { const sp = el("span", "seg-sub"); sp.textContent = sub; b.append(sp); }
+  return b;
+}
+
+/** O card só existe se algum dos três campos tiver o que mostrar. */
+function syncSetupCard() {
+  $("setup").hidden = ["node-pick", "model-pick", "gpu-pick"].every((id) => $(id).hidden);
+}
 
 /** Escolha efetiva para um nó: o que foi clicado, saneado contra o que o nó
     oferece hoje (modelo pode sumir do .env, combinação pode não valer mais). */
@@ -903,15 +970,13 @@ function renderModelPicker() {
 
   $("model-pick").hidden = !models.length;
   $("gpu-pick").hidden = !models.length;
+  syncSetupCard();
   if (!models.length) return;
 
   const mg = $("model-group");
   mg.innerHTML = "";
   for (const m of models) {
-    const b = el("button", "node-btn");
-    b.type = "button";
-    b.setAttribute("aria-pressed", String(m.id === choice.model));
-    b.textContent = m.label || m.id;
+    const b = segBtn(m.label || m.id, m.hint, m.id === choice.model);
     // trocar de modelo zera a escolha de placas (cada modelo tem as suas)
     b.addEventListener("click", () => setModelChoice(n.id, m.id, null));
     mg.append(b);
@@ -922,10 +987,8 @@ function renderModelPicker() {
   gg.innerHTML = "";
   for (const combo of cur.gpus || []) {
     const key = comboKey(combo);
-    const b = el("button", "node-btn");
-    b.type = "button";
-    b.setAttribute("aria-pressed", String(key === choice.gpus));
-    b.textContent = comboLabel(combo, n.gpuNames || []);
+    const b = segBtn(comboLabel(combo, n.gpuNames || []), comboVram(combo, n.gpuVram || []),
+                     key === choice.gpus);
     b.addEventListener("click", () => setModelChoice(n.id, choice.model, key));
     gg.append(b);
   }
@@ -940,12 +1003,11 @@ function renderNodePicker() {
   state.pickerSig = sig;
 
   $("node-pick").hidden = !multiNode();
+  syncSetupCard();
   const group = $("node-group");
   group.innerHTML = "";
   for (const n of state.nodes) {
-    const b = el("button", "node-btn");
-    b.type = "button";
-    b.setAttribute("aria-pressed", String(n.id === state.nodeId));
+    const b = segBtn("", null, n.id === state.nodeId);
     b.disabled = !n.online;
     if (!n.online) {
       b.classList.add("off");
@@ -1526,7 +1588,9 @@ function updateJobEl(entry, job) {
   refs.modelChip.hidden = !job.model;
   if (job.model) {
     const opt = jobNode && (jobNode.models || []).find((m) => m.id === job.model);
-    refs.modelChip.textContent = (opt && opt.label) || job.model;
+    let txt = (opt && opt.label) || job.model;
+    if (Array.isArray(job.gpus) && job.gpus.length) txt += " · " + comboLabel(job.gpus, (jobNode && jobNode.gpuNames) || []);
+    refs.modelChip.textContent = txt;
   }
   refs.time.textContent = timeInfo(job, now);
 

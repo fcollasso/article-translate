@@ -349,21 +349,30 @@ def read_gpu() -> dict | None:
         return None
 
 
-_gpu_names: list[str] | None = None
+_gpu_info: list[dict] | None = None
+
+
+def gpu_info() -> list[dict]:
+    """Nome e VRAM total de cada GPU na ordem dos índices (cacheado — não muda
+    com o servidor de pé). Vira rótulo dos botões de placa no site."""
+    global _gpu_info
+    if _gpu_info is None:
+        try:
+            out = subprocess.run([NVIDIA_SMI, "--query-gpu=name,memory.total",
+                                  "--format=csv,noheader,nounits"],
+                                 capture_output=True, text=True, timeout=5)
+            _gpu_info = []
+            for line in out.stdout.strip().splitlines():
+                name, _, mem = line.rpartition(",")
+                if name.strip():
+                    _gpu_info.append({"name": name.strip(), "vram_mib": int(mem.strip() or 0)})
+        except Exception:
+            _gpu_info = []
+    return _gpu_info
 
 
 def gpu_names() -> list[str]:
-    """Nomes das GPUs na ordem dos índices (cacheado — não muda com o servidor
-    de pé). Vira rótulo dos botões de placa no site."""
-    global _gpu_names
-    if _gpu_names is None:
-        try:
-            out = subprocess.run([NVIDIA_SMI, "--query-gpu=name", "--format=csv,noheader"],
-                                 capture_output=True, text=True, timeout=5)
-            _gpu_names = [l.strip() for l in out.stdout.strip().splitlines() if l.strip()]
-        except Exception:
-            _gpu_names = []
-    return _gpu_names
+    return [g["name"] for g in gpu_info()]
 
 
 _has_gpu: bool | None = None
@@ -464,6 +473,7 @@ def job_to_dict(row: sqlite3.Row) -> dict:
         "finished_at": row["finished_at"],
         "error": row["error"],
         "model": row["model"],
+        "gpus": json.loads(row["gpus"]) if row["gpus"] else None,
         "progress": round(progress, 1) if progress is not None else None,
         "log_tail": log_tail(row["id"]) if status in ("running", "error") else "",
         "files": [
@@ -511,19 +521,23 @@ def _stage_progress(line: str) -> float | None:
     return lo + (hi - lo) * min(x / y, 1.0)
 
 
-_LOADED_COMBO: tuple[str, tuple[int, ...]] | None = None
+_LOADED_COMBO: tuple[str, tuple[int, ...], str | None] | None = None
 
 
-def ensure_model(model_id: str, gpu_idx: list[int], context: int | None, state: RunState) -> None:
+def ensure_model(model_id: str, gpu_idx: list[int], context: int | None, state: RunState,
+                 split: str | None = None) -> None:
     """Deixa o LM Studio com exatamente este modelo carregado nestas GPUs.
 
     Usa o SDK oficial (websocket, mesma porta do servidor) porque a API REST
     não expõe seleção de GPU. Descarrega o que estiver na memória antes — a
     fila é serial e a VRAM não comporta dois modelos. Com mais de uma placa o
-    split é por prioridade (favorMainGpu na primeira da combinação), não
-    'evenly': as placas são assimétricas e a sobra é que vai para a menor."""
+    split default é por prioridade (favorMainGpu na primeira da combinação):
+    a sobra é que vai para a menor — o que, para um modelo que cabe inteiro na
+    primeira, deixa a segunda parada. "split": "evenly" no MODEL_OPTIONS
+    reparte proporcionalmente à VRAM de cada uma (validado: 8B em 16+8 GB fica
+    ~3.9/2.2 GB), útil para de fato usar as duas com modelos pequenos."""
     global _LOADED_COMBO
-    combo = (model_id, tuple(gpu_idx))
+    combo = (model_id, tuple(gpu_idx), split)
     if _LOADED_COMBO == combo:
         return
     import lmstudio as lms  # import tardio: dependência só exercitada com MODEL_OPTIONS
@@ -538,7 +552,7 @@ def ensure_model(model_id: str, gpu_idx: list[int], context: int | None, state: 
         gpu: dict = {"ratio": 1.0,
                      "disabled_gpus": [i for i in range(n_gpus) if i not in gpu_idx]}
         if len(gpu_idx) > 1:
-            gpu["split_strategy"] = "favorMainGpu"
+            gpu["split_strategy"] = split if split in ("evenly", "favorMainGpu") else "favorMainGpu"
             gpu["main_gpu"] = gpu_idx[0]
         config: dict = {"gpu": gpu}
         if context:
@@ -623,7 +637,8 @@ def worker_loop() -> None:
         try:
             if model and gpu_idx:
                 opt = next((o for o in MODEL_OPTIONS if o.get("id") == model), None)
-                ensure_model(model, gpu_idx, (opt or {}).get("context"), state)
+                ensure_model(model, gpu_idx, (opt or {}).get("context"), state,
+                             split=(opt or {}).get("split"))
             returncode = run_job(job_id, UPLOADS_DIR / job_id / filename, out_dir, state, proxy_url,
                                  model=model)
             files = collect_outputs(job_id)
@@ -685,8 +700,9 @@ def node() -> dict:
     info = {"id": NODE_ID, "label": NODE_LABEL, "gpu": has_gpu()}
     if MODEL_OPTIONS:
         info["models"] = [{"id": o.get("id"), "label": o.get("label") or o.get("id"),
-                           "gpus": o.get("gpus", [])} for o in MODEL_OPTIONS]
+                           "hint": o.get("hint"), "gpus": o.get("gpus", [])} for o in MODEL_OPTIONS]
         info["gpu_names"] = gpu_names()
+        info["gpu_vram_mib"] = [g["vram_mib"] for g in gpu_info()]
     return info
 
 
